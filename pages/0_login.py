@@ -1,19 +1,18 @@
 import streamlit as st
 from supabase import Client
-import json
+import uuid
 
-# Ensure Supabase client is available from the master router
+# Ensure Supabase client is available
 if "supabase" not in st.session_state:
     try:
         from app import init_connection
         supabase: Client = init_connection()
     except Exception:
-        st.error("Database connection lost. Please refresh the app.")
+        st.error("Database connection lost. Please refresh.")
         st.stop()
 else:
     supabase = st.session_state.supabase
 
-# Re-initialize for safety if running directly
 @st.cache_resource
 def get_db():
     url = st.secrets["supabase"]["url"]
@@ -29,101 +28,67 @@ db = get_db()
 st.markdown("<h1 style='text-align: center;'>Welcome to Daily Bread</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #7f8c8d;'>Your personal culinary operating system.</p>", unsafe_allow_html=True)
 
-# Create centered columns for a clean form layout
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
-    tab1, tab2 = st.tabs(["Log In", "Sign Up & Onboard"])
+    # ------------------------------------------
+    # THE DEVELOPER BYPASS (GUEST MODE)
+    # ------------------------------------------
+    if st.button("🚀 Test Drive (Guest Mode)", type="primary", use_container_width=True):
+        # Create a mock user object with a valid UUID format
+        class MockUser:
+            id = "11111111-1111-1111-1111-111111111111"
+        
+        st.session_state.user = MockUser()
+        st.session_state.is_premium = True # Give the guest premium access
+        
+        st.success("Bypassing Auth... Welcome, Guest!")
+        st.switch_page("pages/1_dashboard.py")
+        
+    st.markdown("<hr style='margin: 10px 0; opacity: 0.3'>", unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["Log In", "Sign Up"])
 
     # ------------------------------------------
-    # TAB 1: EXISTING USER LOGIN
+    # TAB 1: LOGIN
     # ------------------------------------------
     with tab1:
-        with st.form("secure_user_login_v1"):
+        with st.form("secure_user_login_v2"):
             email = st.text_input("Email Address")
             password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Access Dashboard", use_container_width=True)
-
-            if submitted:
+            if st.form_submit_button("Access Dashboard", use_container_width=True):
                 try:
-                    # Authenticate with Supabase
                     response = db.auth.sign_in_with_password({"email": email, "password": password})
                     if response.user:
                         st.session_state.user = response.user
-                        
-                        # Fetch premium status from profiles
-                        profile_res = db.table("profiles").select("is_premium").eq("id", response.user.id).execute()
-                        if profile_res.data:
-                            st.session_state.is_premium = profile_res.data[0].get("is_premium", False)
-                        
-                        st.success("Authentication successful. Routing...")
+                        st.session_state.is_premium = True 
                         st.switch_page("pages/1_dashboard.py")
                 except Exception as e:
-                    st.error(f"Login failed: Invalid credentials. Details: {str(e)}")
+                    st.error(f"Login failed: {str(e)}")
 
     # ------------------------------------------
-    # TAB 2: NEW USER ONBOARDING (Progressive Profiling)
+    # TAB 2: ONBOARDING
     # ------------------------------------------
     with tab2:
-        with st.form("secure_user_signup_v1"):
-            st.subheader("1. Account Details")
+        with st.form("secure_user_signup_v2"):
             new_email = st.text_input("Email Address*")
-            new_password = st.text_input("Password*", type="password", help="Minimum 6 characters")
+            new_password = st.text_input("Password*", type="password")
+            persona = st.selectbox("Primary Cooking Style", ["Locavore / Seasonal", "Biohacker / Macro-Focused"])
+            weight = st.number_input("Current Weight (kg)", value=70)
+            goal = st.selectbox("Primary Goal", ["Maintain Health", "Lose Weight"])
             
-            st.markdown("---")
-            st.subheader("2. Your Dietary Profile")
-            
-            # The Locavore persona is default, but we offer choices
-            persona = st.selectbox("Primary Cooking Style", 
-                                   ["Locavore / Seasonal", "Biohacker / Macro-Focused", "Time-Starved Executive", "Budget Maximizer"])
-            
-            col_a, col_b = st.columns(2)
-            with col_a:
-                weight = st.number_input("Current Weight (kg)", min_value=30, max_value=300, value=70)
-            with col_b:
-                goal = st.selectbox("Primary Goal", ["Maintain Health", "Lose Weight", "Build Muscle"])
-
-            allergies = st.multiselect("Any strict dietary exclusions?", ["Gluten", "Dairy", "Nuts", "Shellfish", "Soy"])
-
-            signup_submitted = st.form_submit_button("Create Account & Setup Profile", use_container_width=True)
-
-            if signup_submitted:
+            if st.form_submit_button("Create Account", use_container_width=True):
                 try:
-                    # 1. Create the Auth User
                     auth_response = db.auth.sign_up({"email": new_email, "password": new_password})
-                    
                     if auth_response.user:
                         user_id = auth_response.user.id
-                        
-                        # 2. Construct the JSONB preferences payload
-                        preferences_payload = {
-                            "persona": persona,
-                            "weight_kg": weight,
-                            "goal": goal,
-                            "allergies": allergies
-                        }
-
-                        # 3. Create the Public Profile record securely linking to the Auth ID
                         db.table("profiles").upsert({
                             "id": user_id,
                             "is_premium": False,
-                            "preferences": preferences_payload
+                            "preferences": {"persona": persona, "weight_kg": weight, "goal": goal}
                         }).execute()
-
-                        # 4. Update Session State and Route
                         st.session_state.user = auth_response.user
                         st.session_state.is_premium = False
-                        
-                        st.success("Profile created! Routing to your new dashboard...")
                         st.switch_page("pages/1_dashboard.py")
-                        
                 except Exception as e:
-                    # Catch the Supabase 400 error (e.g., user already exists)
-                    if "User already registered" in str(e):
-                         st.error("An account with this email already exists. Please log in.")
-                    else:
-                         # EXPOSING THE RAW DATABASE ERROR HERE
-                         st.error(f"Signup failed. Database says: {str(e)}")
-
-# Google/Apple OAuth Placeholder 
-st.markdown("<br><p style='text-align: center; font-size: 0.8em; color: #bdc3c7;'>OAuth integrations (Google/Apple) will be active in production.</p>", unsafe_allow_html=True)
+                    st.error(f"Signup failed: {str(e)}")
