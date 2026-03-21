@@ -42,8 +42,8 @@ with col2:
         st.session_state.user = MockUser()
         st.session_state.is_premium = True # Give the guest premium access
         
-        st.success("Bypassing Auth... Welcome, Guest!")
-        st.switch_page("pages/1_dashboard.py")
+        # Trigger a full app rerun so the Router in app.py unlocks the pages
+        st.rerun()
         
     st.markdown("<hr style='margin: 10px 0; opacity: 0.3'>", unsafe_allow_html=True)
     
@@ -61,8 +61,15 @@ with col2:
                     response = db.auth.sign_in_with_password({"email": email, "password": password})
                     if response.user:
                         st.session_state.user = response.user
-                        st.session_state.is_premium = True 
-                        st.switch_page("pages/1_dashboard.py")
+                        
+                        # Check premium status securely
+                        profile_res = db.table("profiles").select("is_premium").eq("id", response.user.id).execute()
+                        if profile_res.data:
+                            st.session_state.is_premium = profile_res.data[0].get("is_premium", False)
+                        else:
+                            st.session_state.is_premium = False
+                            
+                        st.rerun() # Replaced switch_page with rerun
                 except Exception as e:
                     st.error(f"Login failed: {str(e)}")
 
@@ -89,6 +96,6 @@ with col2:
                         }).execute()
                         st.session_state.user = auth_response.user
                         st.session_state.is_premium = False
-                        st.switch_page("pages/1_dashboard.py")
+                        st.rerun() # Replaced switch_page with rerun
                 except Exception as e:
                     st.error(f"Signup failed: {str(e)}")
