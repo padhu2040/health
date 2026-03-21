@@ -22,7 +22,7 @@ else:
 
 user_id = st.session_state.user.id
 
-# Initialize AI Client (Model is assigned later with fallback logic)
+# Initialize AI Client 
 try:
     genai.configure(api_key=st.secrets["gcp"]["gemini_api_key"])
 except Exception:
@@ -128,15 +128,29 @@ if generate_btn:
         ]
         """
         try:
-            # Model Fallback Architecture to prevent 404 errors
-            try:
-                model = genai.GenerativeModel('gemini-1.5-flash-latest')
-                response = model.generate_content(prompt)
-            except Exception:
-                model = genai.GenerativeModel('gemini-pro') # Universally accepted fallback
-                response = model.generate_content(prompt)
+            # ---------------------------------------------------------
+            # THE DYNAMIC MODEL MAPPER
+            # ---------------------------------------------------------
+            # 1. Ask Google what models this specific API key/SDK has access to
+            available_models = [
+                m.name for m in genai.list_models() 
+                if 'generateContent' in m.supported_generation_methods
+            ]
+            
+            if not available_models:
+                st.error("Error: No text-generation models found for this API key.")
+                st.stop()
                 
+            # 2. Pick the best one (prefer a 'flash' model for speed, otherwise take the first one available)
+            chosen_model = next((m for m in available_models if 'flash' in m), available_models[0])
+            
+            # 3. Use the confirmed working model string
+            model = genai.GenerativeModel(chosen_model)
+            response = model.generate_content(prompt)
+            # ---------------------------------------------------------
+            
             st.session_state.current_recommendations = json.loads(clean_json(response.text))
+            
         except Exception as e:
             st.error(f"AI Generation failed: {str(e)}")
 
