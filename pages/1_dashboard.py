@@ -2,7 +2,6 @@ import streamlit as st
 import datetime
 import google.generativeai as genai
 import json
-import re
 
 # ==========================================
 # 1. THE GATEKEEPER & SETUP
@@ -34,21 +33,166 @@ except Exception:
 # ==========================================
 # 2. STATE MANAGEMENT FOR AI
 # ==========================================
-# We must store AI results in session state so they don't vanish when a user interacts with the page
+# We must store AI results in session state so they don't vanish
 if "current_recommendations" not in st.session_state:
     st.session_state.current_recommendations = None
 
 def clean_json(raw_text):
     text = raw_text.strip()
-    if text.startswith("
-http://googleusercontent.com/immersive_entry_chip/0
-http://googleusercontent.com/immersive_entry_chip/1
-http://googleusercontent.com/immersive_entry_chip/2
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
 
-### Architectural Upgrades Explained:
+# Clean function for the date callback to prevent syntax errors
+def update_active_date():
+    st.session_state.active_date = st.session_state.date_picker
 
-1. **Clinical Targeting Prompt:** Look at the `prompt` string sent to Gemini. We explicitly instruct the AI to act as a *clinical nutritionist* and justify *why* the recipe fits their specific focus (e.g., explaining why a specific fiber source was chosen for Fatty Liver support).
-2. **Session State Retention:** Notice the `st.session_state.current_recommendations` block. In standard Streamlit, clicking the "Assign to" dropdown inside a generated recipe would cause the page to refresh and delete the AI's output instantly. Caching it in the session state anchors the data to the screen until the user explicitly hits "Accept & Add".
-3. **The `instructions` Array:** The AI now outputs a clean array of strings for the steps, which we render as an ordered list using `enumerate()` in the UI. 
+# ==========================================
+# 3. EXECUTIVE UI & KPI HEADER
+# ==========================================
+col_title, col_date = st.columns([3, 1])
+with col_title:
+    st.title("Command Center")
+with col_date:
+    st.date_input(
+        "Active Date", 
+        value=st.session_state.active_date, 
+        key="date_picker", 
+        on_change=update_active_date
+    )
 
-Run the SQL command, commit this code, and let me know how the menu generation feels.
+st.write("---")
+
+# ==========================================
+# 4. THE AI RECOMMENDATION ENGINE
+# ==========================================
+st.subheader("🧠 The AI Chef's Table")
+st.markdown("Select your clinical and dietary preferences for today's menu recommendations.")
+
+c1, c2, c3 = st.columns(3)
+with c1:
+    health_focus = st.selectbox(
+        "Clinical Focus", 
+        ["Maintain Health", "Weight Loss (Caloric Deficit)", "Reduce Cholesterol", "Fatty Liver Support", "Blood Sugar Control"]
+    )
+with c2:
+    diet_type = st.selectbox(
+        "Dietary Protocol", 
+        ["Locavore / Seasonal", "Mediterranean", "Keto / Ultra Low Carb", "Paleo", "Vegan / Plant-Based"]
+    )
+with c3:
+    prep_time = st.selectbox(
+        "Maximum Prep Time", 
+        ["Under 15 mins", "Under 30 mins", "Weekend Project (60m+)"]
+    )
+
+if st.button("Generate Tailored Menu", type="primary", use_container_width=True):
+    with st.spinner(f"Architecting {diet_type} recipes for {health_focus}..."):
+        prompt = f"""
+        You are a clinical nutritionist and executive chef. Generate 2 highly tailored meal recommendations.
+        Health Focus: {health_focus}.
+        Dietary Protocol: {diet_type}.
+        Max Prep Time: {prep_time}.
+        
+        Return ONLY a valid JSON array of objects. No markdown. Structure:
+        [
+          {{
+            "title": "String",
+            "description": "Short explanation",
+            "prep_time_mins": Integer,
+            "macros": {{"calories": Integer, "protein": Integer, "carbs": Integer, "fat": Integer}},
+            "ingredients": [{{"item": "String", "amount": Number, "unit": "String"}}],
+            "instructions": ["Step 1", "Step 2", "Step 3"]
+          }}
+        ]
+        """
+        try:
+            response = model.generate_content(prompt)
+            st.session_state.current_recommendations = json.loads(clean_json(response.text))
+        except Exception as e:
+            st.error("AI Generation failed. Please try again.")
+
+# Display Recommendations if they exist
+if st.session_state.current_recommendations:
+    st.markdown("### Suggested Meals")
+    for idx, rec in enumerate(st.session_state.current_recommendations):
+        with st.expander(f"✨ {rec.get('title', 'Recipe')} ({rec.get('prep_time_mins', 0)} mins)"):
+            st.markdown(f"*{rec.get('description', '')}*")
+            
+            # Macros Grid
+            mac = rec.get('macros', {})
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Calories", mac.get('calories', 0))
+            m2.metric("Protein", f"{mac.get('protein', 0)}g")
+            m3.metric("Carbs", f"{mac.get('carbs', 0)}g")
+            m4.metric("Fat", f"{mac.get('fat', 0)}g")
+            
+            # Details Grid
+            col_ing, col_inst = st.columns(2)
+            with col_ing:
+                st.markdown("**Ingredients**")
+                for ing in rec.get('ingredients', []):
+                    st.write(f"- {ing.get('amount', '')} {ing.get('unit', '')} {ing.get('item', '')}")
+            with col_inst:
+                st.markdown("**How to Prepare**")
+                for step_num, step in enumerate(rec.get('instructions', []), 1):
+                    st.write(f"{step_num}. {step}")
+            
+            st.write("---")
+            
+            # Save Logic
+            slot = st.selectbox("Assign to:", ["Breakfast", "Lunch", "Dinner", "Snack"], key=f"slot_{idx}")
+            if st.button("Accept & Add to Today's Plan", key=f"save_{idx}", type="secondary"):
+                # 1. Save to Recipes
+                recipe_payload = {
+                    "user_id": user_id,
+                    "title": rec.get("title", "Unknown"),
+                    "description": rec.get("description", ""),
+                    "prep_time_mins": rec.get("prep_time_mins", 0),
+                    "macros": rec.get("macros", {}),
+                    "ingredients": rec.get("ingredients", []),
+                    "instructions": rec.get("instructions", []),
+                    "is_custom": False
+                }
+                res = supabase.table("recipes").insert(recipe_payload).execute()
+                new_recipe_id = res.data[0]["id"]
+                
+                # 2. Map to Daily Plan
+                plan_payload = {
+                    "user_id": user_id,
+                    "plan_date": str(st.session_state.active_date),
+                    "meal_slot": slot,
+                    "recipe_id": new_recipe_id
+                }
+                supabase.table("daily_plans").insert(plan_payload).execute()
+                
+                st.success(f"Added to your schedule!")
+                st.session_state.current_recommendations = None # Clear after saving
+                st.rerun()
+
+st.write("---")
+
+# ==========================================
+# 5. TODAY's ITINERARY (Read from Database)
+# ==========================================
+st.subheader(f"Scheduled for {st.session_state.active_date.strftime('%B %d, %Y')}")
+
+meals_res = supabase.table("daily_plans").select(
+    "meal_slot, recipes(title, prep_time_mins)"
+).eq("user_id", user_id).eq("plan_date", str(st.session_state.active_date)).execute()
+
+planned_meals = meals_res.data if meals_res.data else []
+slots = ["Breakfast", "Lunch", "Dinner", "Snack"]
+
+for slot in slots:
+    meal = next((m for m in planned_meals if m["meal_slot"] == slot), None)
+    with st.container():
+        if meal and meal.get("recipes"):
+            recipe = meal["recipes"]
+            st.info(f"🍽️ **{slot}**: {recipe['title']} (Prep: {recipe['prep_time_mins']} mins)")
+        else:
+            st.markdown(f"<p style='color: #bdc3c7;'>{slot}: Open</p>", unsafe_allow_html=True)
