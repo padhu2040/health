@@ -65,7 +65,7 @@ with col2:
     # TAB 2: NEW USER ONBOARDING (Progressive Profiling)
     # ------------------------------------------
     with tab2:
-        with st.form("signup_form"):
+        with st.form("secure_user_signup_v1"):
             st.subheader("1. Account Details")
             new_email = st.text_input("Email Address*")
             new_password = st.text_input("Password*", type="password", help="Minimum 6 characters")
