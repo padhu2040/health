@@ -114,7 +114,7 @@ if st.button("Generate Tailored Menu", type="primary", use_container_width=True)
             response = model.generate_content(prompt)
             st.session_state.current_recommendations = json.loads(clean_json(response.text))
         except Exception as e:
-            st.error("AI Generation failed. Please try again.")
+            st.error(f"AI Generation failed: {str(e)}")
 
 # Display Recommendations if they exist
 if st.session_state.current_recommendations:
