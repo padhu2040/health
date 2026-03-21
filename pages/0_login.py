@@ -11,7 +11,7 @@ if "supabase" not in st.session_state:
         st.error("Database connection lost. Please refresh the app.")
         st.stop()
 else:
-    supabase = st.session_state.supabase # Assuming you stash it in session_state, or just re-import
+    supabase = st.session_state.supabase
 
 # Re-initialize for safety if running directly
 @st.cache_resource
@@ -59,7 +59,7 @@ with col2:
                         st.success("Authentication successful. Routing...")
                         st.switch_page("pages/1_dashboard.py")
                 except Exception as e:
-                    st.error(f"Login failed: Invalid credentials or network error.")
+                    st.error(f"Login failed: Invalid credentials. Details: {str(e)}")
 
     # ------------------------------------------
     # TAB 2: NEW USER ONBOARDING (Progressive Profiling)
@@ -122,7 +122,8 @@ with col2:
                     if "User already registered" in str(e):
                          st.error("An account with this email already exists. Please log in.")
                     else:
-                         st.error(f"Signup failed. Please try again.")
+                         # EXPOSING THE RAW DATABASE ERROR HERE
+                         st.error(f"Signup failed. Database says: {str(e)}")
 
 # Google/Apple OAuth Placeholder 
 st.markdown("<br><p style='text-align: center; font-size: 0.8em; color: #bdc3c7;'>OAuth integrations (Google/Apple) will be active in production.</p>", unsafe_allow_html=True)
