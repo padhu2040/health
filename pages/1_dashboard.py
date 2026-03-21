@@ -22,10 +22,9 @@ else:
 
 user_id = st.session_state.user.id
 
-# Initialize AI
+# Initialize AI Client (Model is assigned later with fallback logic)
 try:
     genai.configure(api_key=st.secrets["gcp"]["gemini_api_key"])
-    model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception:
     st.error("AI Engine offline. Check GCP secrets.")
     st.stop()
@@ -33,7 +32,6 @@ except Exception:
 # ==========================================
 # 2. STATE MANAGEMENT FOR AI
 # ==========================================
-# We must store AI results in session state so they don't vanish
 if "current_recommendations" not in st.session_state:
     st.session_state.current_recommendations = None
 
@@ -47,7 +45,6 @@ def clean_json(raw_text):
         text = text[:-3]
     return text.strip()
 
-# Clean function for the date callback to prevent syntax errors
 def update_active_date():
     st.session_state.active_date = st.session_state.date_picker
 
@@ -71,38 +68,58 @@ st.write("---")
 # 4. THE AI RECOMMENDATION ENGINE
 # ==========================================
 st.subheader("🧠 The AI Chef's Table")
-st.markdown("Select your clinical and dietary preferences for today's menu recommendations.")
+st.markdown("Select your clinical, dietary, and cultural preferences.")
 
-c1, c2, c3 = st.columns(3)
-with c1:
+# Row 1 of Preferences
+row1_c1, row1_c2, row1_c3 = st.columns(3)
+with row1_c1:
     health_focus = st.selectbox(
         "Clinical Focus", 
         ["Maintain Health", "Weight Loss (Caloric Deficit)", "Reduce Cholesterol", "Fatty Liver Support", "Blood Sugar Control"]
     )
-with c2:
+with row1_c2:
     diet_type = st.selectbox(
         "Dietary Protocol", 
-        ["Locavore / Seasonal", "Mediterranean", "Keto / Ultra Low Carb", "Paleo", "Vegan / Plant-Based"]
+        ["Locavore / Seasonal", "Mediterranean", "Keto / Ultra Low Carb", "Vegan / Plant-Based"]
     )
-with c3:
+with row1_c3:
+    cuisine = st.selectbox(
+        "Cuisine Style", 
+        ["Authentic South Indian", "Global / No Preference", "North Indian", "Pan-Asian", "Continental"]
+    )
+
+# Row 2 of Preferences
+row2_c1, row2_c2, row2_c3 = st.columns(3)
+with row2_c1:
     prep_time = st.selectbox(
         "Maximum Prep Time", 
         ["Under 15 mins", "Under 30 mins", "Weekend Project (60m+)"]
     )
+with row2_c2:
+    language = st.selectbox(
+        "Output Language", 
+        ["English", "Tamil (தமிழ்)"]
+    )
+with row2_c3:
+    st.write("") # Spacer to align the button
+    generate_btn = st.button("Generate Tailored Menu", type="primary", use_container_width=True)
 
-if st.button("Generate Tailored Menu", type="primary", use_container_width=True):
-    with st.spinner(f"Architecting {diet_type} recipes for {health_focus}..."):
+if generate_btn:
+    with st.spinner(f"Architecting {cuisine} recipes in {language}..."):
         prompt = f"""
-        You are a clinical nutritionist and executive chef. Generate 2 highly tailored meal recommendations.
+        You are a clinical nutritionist and an executive chef. Generate 2 highly tailored meal recommendations.
         Health Focus: {health_focus}.
         Dietary Protocol: {diet_type}.
+        Cuisine Style: {cuisine}.
         Max Prep Time: {prep_time}.
         
-        Return ONLY a valid JSON array of objects. No markdown. Structure:
+        CRITICAL LANGUAGE RULE: You MUST write the ENTIRE response (including the title, description, ingredient items, and instructions) natively in {language}. Do NOT use English if Tamil is selected.
+        
+        Return ONLY a valid JSON array of objects. No markdown formatting outside the JSON. Structure:
         [
           {{
             "title": "String",
-            "description": "Short explanation",
+            "description": "Short explanation of health benefits",
             "prep_time_mins": Integer,
             "macros": {{"calories": Integer, "protein": Integer, "carbs": Integer, "fat": Integer}},
             "ingredients": [{{"item": "String", "amount": Number, "unit": "String"}}],
@@ -111,7 +128,14 @@ if st.button("Generate Tailored Menu", type="primary", use_container_width=True)
         ]
         """
         try:
-            response = model.generate_content(prompt)
+            # Model Fallback Architecture to prevent 404 errors
+            try:
+                model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                response = model.generate_content(prompt)
+            except Exception:
+                model = genai.GenerativeModel('gemini-pro') # Universally accepted fallback
+                response = model.generate_content(prompt)
+                
             st.session_state.current_recommendations = json.loads(clean_json(response.text))
         except Exception as e:
             st.error(f"AI Generation failed: {str(e)}")
@@ -170,7 +194,7 @@ if st.session_state.current_recommendations:
                 }
                 supabase.table("daily_plans").insert(plan_payload).execute()
                 
-                st.success(f"Added to your schedule!")
+                st.success("Added to your schedule!")
                 st.session_state.current_recommendations = None # Clear after saving
                 st.rerun()
 
