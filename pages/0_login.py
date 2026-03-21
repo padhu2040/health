@@ -39,7 +39,7 @@ with col2:
     # TAB 1: EXISTING USER LOGIN
     # ------------------------------------------
     with tab1:
-        with st.form("login_form"):
+        with st.form("secure_user_login_v1"):
             email = st.text_input("Email Address")
             password = st.text_input("Password", type="password")
             submitted = st.form_submit_button("Access Dashboard", use_container_width=True)
