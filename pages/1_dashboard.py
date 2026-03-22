@@ -75,7 +75,14 @@ row1_c1, row1_c2, row1_c3 = st.columns(3)
 with row1_c1:
     health_focus = st.selectbox(
         "Clinical Focus", 
-        ["Maintain Health", "Weight Loss (Caloric Deficit)", "Reduce Cholesterol", "Fatty Liver Support", "Blood Sugar Control"]
+        [
+            "Maintain Health", 
+            "Weight Loss (Caloric Deficit)", 
+            "Reduce Cholesterol", 
+            "Fatty Liver Support", 
+            "Blood Sugar Control",
+            "Kids / Teenagers Nutrition" # <--- NEW ADDITION
+        ]
     )
 with row1_c2:
     diet_type = st.selectbox(
@@ -93,7 +100,7 @@ row2_c1, row2_c2 = st.columns(2)
 with row2_c1:
     language = st.selectbox(
         "Output Language", 
-        ["English", "Tamil (தமிழ்)"]
+        ["English", "Tamil (Conversational Tanglish)"] # <--- NEW ADDITION
     )
 with row2_c2:
     st.write("") # Spacer to align the button
@@ -107,7 +114,9 @@ if generate_btn:
         Dietary Protocol: {diet_type}.
         Cuisine Style: {cuisine}.
         
-        CRITICAL LANGUAGE RULE: You MUST write the ENTIRE response (titles, descriptions, categories, and slots) natively in {language}.
+        CRITICAL LANGUAGE RULE: 
+        If the language is 'Tamil (Conversational Tanglish)', you MUST write the titles, descriptions, and categories exactly how a modern person in Chennai speaks—a natural mix of Tamil and English. Use English words for modern concepts (e.g., 'protein', 'healthy', 'energy', 'snack', 'taste', 'kids'), but keep the sentence structure and conversational flow in Tamil script. 
+        If the language is 'English', use standard English.
         
         Do NOT generate full recipes with ingredients or instructions. Just provide a conceptual overview of the day.
         Include exactly 5 meals in this logical order: Breakfast, Mid-Morning Snack, Lunch, Evening Snack/Soup, Dinner.
@@ -180,7 +189,7 @@ if st.session_state.current_recommendations:
             with st.spinner("Locking in your schedule..."):
                 try:
                     for item in plan:
-                        # 1. Save title to recipes (ingredients/instructions left empty to elaborate later)
+                        # 1. Save title to recipes 
                         recipe_payload = {
                             "user_id": user_id,
                             "title": item.get("title", "Unknown"),
