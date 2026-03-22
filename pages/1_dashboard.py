@@ -81,7 +81,7 @@ with row1_c1:
             "Reduce Cholesterol", 
             "Fatty Liver Support", 
             "Blood Sugar Control",
-            "Kids / Teenagers Nutrition" # <--- NEW ADDITION
+            "Kids / Teenagers Nutrition"
         ]
     )
 with row1_c2:
@@ -100,7 +100,7 @@ row2_c1, row2_c2 = st.columns(2)
 with row2_c1:
     language = st.selectbox(
         "Output Language", 
-        ["English", "Tamil (Conversational Tanglish)"] # <--- NEW ADDITION
+        ["English", "Tamil (Conversational Tanglish)"]
     )
 with row2_c2:
     st.write("") # Spacer to align the button
@@ -114,11 +114,13 @@ if generate_btn:
         Dietary Protocol: {diet_type}.
         Cuisine Style: {cuisine}.
         
-        CRITICAL LANGUAGE RULE: 
-        If the language is 'Tamil (Conversational Tanglish)', you MUST write the titles, descriptions, and categories exactly how a modern person in Chennai speaks—a natural mix of Tamil and English. Use English words for modern concepts (e.g., 'protein', 'healthy', 'energy', 'snack', 'taste', 'kids'), but keep the sentence structure and conversational flow in Tamil script. 
-        If the language is 'English', use standard English.
+        CRITICAL LANGUAGE & CONTENT RULES: 
+        1. If the language is 'Tamil (Conversational Tanglish)', you MUST write exactly how a modern person in Chennai speaks using a literal MIX of Tamil script and English script. Example: "ரொம்ப healthy ஆன High Protein சுண்டல்", "Kids-க்கு புடிச்ச மாதிரி tasty fruit bowl". Use English words/script for concepts like 'protein', 'healthy', 'weight loss', 'fiber', 'snack' mixed right into the Tamil sentence.
+        2. If the language is 'English', use standard English.
+        3. INGREDIENT SPECIFICITY: Whenever you recommend a fruit bowl, vegetable salad, or mixed dish, you MUST explicitly name the specific fruits and vegetables. Never just say "Fruit bowl" or "Veg salad".
+        4. TRADITIONAL INGREDIENTS: Actively include traditional and native vegetables and fruits (e.g., Murungakkai (Drumstick), Vazhaithandu (Plantain stem), Avarakkai, Koyyapazham (Guava), Pappali (Papaya), Nelli (Amla), Pomegranate).
         
-        Do NOT generate full recipes with ingredients or instructions. Just provide a conceptual overview of the day.
+        Do NOT generate full recipes with cooking instructions. Just provide a conceptual overview of the day.
         Include exactly 5 meals in this logical order: Breakfast, Mid-Morning Snack, Lunch, Evening Snack/Soup, Dinner.
         
         Return ONLY a valid JSON object matching this exact structure:
@@ -126,9 +128,9 @@ if generate_btn:
           "daily_plan": [
             {{
               "slot": "String (e.g. Breakfast, Lunch)",
-              "category": "String (e.g. Fruit, Soup, Main Course, Light Snack)",
+              "category": "String (e.g. Traditional Breakfast, Healthy Snack)",
               "title": "String (Name of the dish)",
-              "description": "Short explanation of why it fits the health focus",
+              "description": "Short explanation of why it fits the health focus, naming the specific traditional fruits/veggies used.",
               "macros": {{"calories": Integer, "protein": Integer, "carbs": Integer, "fat": Integer}}
             }}
           ]
@@ -189,7 +191,6 @@ if st.session_state.current_recommendations:
             with st.spinner("Locking in your schedule..."):
                 try:
                     for item in plan:
-                        # 1. Save title to recipes 
                         recipe_payload = {
                             "user_id": user_id,
                             "title": item.get("title", "Unknown"),
@@ -203,7 +204,6 @@ if st.session_state.current_recommendations:
                         res = supabase.table("recipes").insert(recipe_payload).execute()
                         new_recipe_id = res.data[0]["id"]
                         
-                        # 2. Map to Daily Plan
                         plan_payload = {
                             "user_id": user_id,
                             "plan_date": str(st.session_state.active_date),
