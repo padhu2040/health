@@ -2,6 +2,7 @@ import streamlit as st
 import datetime
 import google.generativeai as genai
 import json
+import random
 
 # ==========================================
 # 1. SETUP & SILENT AUTHENTICATION
@@ -155,57 +156,91 @@ You MUST write the values for "category", "title", "description", "ingredients",
 """
 
 # ==========================================
-# 5. AI ENGINE (PRE-FETCHING ARCHITECTURE)
+# 5. CACHE-WITH-FALLBACK ENGINE
 # ==========================================
+def fetch_vault_options(slot_name, required_count):
+    """Attempts to pull required recipes directly from Supabase."""
+    if not supabase: return []
+    res = supabase.table("recipe_bank").select("*").eq("health_focus", health_focus).eq("diet_type", diet_type).eq("cuisine", cuisine).eq("language", language).eq("meal_slot", slot_name).limit(20).execute()
+    data = res.data if res.data else []
+    
+    if len(data) >= required_count:
+        random.shuffle(data) # Ensure variety
+        formatted_options = []
+        for d in data[:required_count]:
+            formatted_options.append({
+                "category": "Curated Selection", 
+                "title": d.get("title", ""),
+                "description": d.get("description", ""),
+                "macros": d.get("macros", {}),
+                "prep_time_mins": d.get("prep_time_mins", 15),
+                "ingredients": d.get("ingredients", []),
+                "instructions": d.get("instructions", []),
+                "is_expanded": False # We leave it collapsed initially
+            })
+        return formatted_options
+    return [] # Cache Miss
+
 if generate_btn:
     st.session_state.current_mode = planning_mode 
+    slots_needed = ["Breakfast", "Mid-Morning Snack", "Lunch", "Evening Snack / Soup", "Dinner"] if planning_mode == "Full Day Itinerary" else [target_meal]
+    options_per_slot = 3 if planning_mode == "Full Day Itinerary" else 5
     
-    if planning_mode == "Full Day Itinerary":
-        task_instruction = "Generate a FULL DAY meal plan with 5 slots: Breakfast, Mid-Morning Snack, Lunch, Evening Snack, Dinner. For EACH slot, generate exactly 3 distinct recipe options."
-    else:
-        task_instruction = f"Do NOT generate a full day plan. Generate exactly 5 distinct, creative options for ONE specific meal slot: {target_meal}."
+    with st.spinner("Checking Recipe Vault..."):
+        daily_plan = []
+        cache_miss = False
+        
+        # 1. Attempt to build the plan entirely from the DB Cache
+        for slot in slots_needed:
+            options = fetch_vault_options(slot, options_per_slot)
+            if not options:
+                cache_miss = True
+                break
+            daily_plan.append({"slot": slot, "selected_index": 0, "options": options})
 
-    with st.spinner("Compiling Options Matrix..."):
-        prompt = f"""
-        You are a minimalist culinary nutritionist. Focus: {health_focus}. Protocol: {diet_type}. Cuisine: {cuisine}.
-        
-        {task_instruction}
-        {LANGUAGE_RULES}
-        
-        Return ONLY a valid JSON object matching this exact nested structure:
-        {{
-          "daily_plan": [
+        # 2. If Cache Miss, Fallback to Live AI Generation
+        if cache_miss:
+            st.toast("Vault expanding... Drafting live AI recipes!", icon="🧠")
+            if planning_mode == "Full Day Itinerary":
+                task_instruction = "Generate a FULL DAY meal plan with 5 slots: Breakfast, Mid-Morning Snack, Lunch, Evening Snack, Dinner. For EACH slot, generate exactly 3 distinct recipe options."
+            else:
+                task_instruction = f"Do NOT generate a full day plan. Generate exactly 5 distinct, creative options for ONE specific meal slot: {target_meal}."
+
+            prompt = f"""
+            You are a minimalist culinary nutritionist. Focus: {health_focus}. Protocol: {diet_type}. Cuisine: {cuisine}.
+            {task_instruction}
+            {LANGUAGE_RULES}
+            Return ONLY a valid JSON object matching this exact nested structure:
             {{
-              "slot": "String (Meal Slot Name)",
-              "options": [
+              "daily_plan": [
                 {{
-                  "category": "String",
-                  "title": "String",
-                  "description": "String",
-                  "macros": {{"calories": Integer, "protein": Integer, "carbs": Integer, "fat": Integer}},
-                  "is_expanded": false,
-                  "prep_time_mins": 0,
-                  "ingredients": [],
-                  "instructions": []
+                  "slot": "String (Meal Slot Name)",
+                  "options": [
+                    {{
+                      "category": "String", "title": "String", "description": "String",
+                      "macros": {{"calories": Integer, "protein": Integer, "carbs": Integer, "fat": Integer}},
+                      "is_expanded": false, "prep_time_mins": 0, "ingredients": [], "instructions": []
+                    }}
+                  ]
                 }}
               ]
             }}
-          ]
-        }}
-        """
-        try:
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            chosen_model = next((m for m in available_models if 'flash' in m), available_models[0])
-            model = genai.GenerativeModel(chosen_model)
-            response = model.generate_content(prompt)
-            
-            raw_data = json.loads(clean_json(response.text))
-            for slot_data in raw_data.get("daily_plan", []):
-                slot_data["selected_index"] = 0
+            """
+            try:
+                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                chosen_model = next((m for m in available_models if 'flash' in m), available_models[0])
+                model = genai.GenerativeModel(chosen_model)
+                response = model.generate_content(prompt)
                 
-            st.session_state.current_recommendations = raw_data
-        except Exception as e:
-            st.error("Generation failed. Please try again.")
+                raw_data = json.loads(clean_json(response.text))
+                for slot_data in raw_data.get("daily_plan", []):
+                    slot_data["selected_index"] = 0
+                st.session_state.current_recommendations = raw_data
+            except Exception as e:
+                st.error("Live generation failed. Please try again.")
+        else:
+            # 3. Cache Hit! Assemble state instantly.
+            st.session_state.current_recommendations = {"daily_plan": daily_plan}
 
 # ==========================================
 # 6. RESULTS, CURATION & INLINE ELABORATION
@@ -235,7 +270,6 @@ if st.session_state.current_recommendations:
             </div>
         """
         
-        # HTML Rendering Fix applied here (No indentation)
         if item.get("is_expanded", False):
             ing_html = "".join([f"<li>{ing.get('amount','')} {ing.get('unit','')} {ing.get('item','')}</li>" for ing in item.get('ingredients', [])])
             inst_html = "".join([f"<li>{step}</li>" for step in item.get('instructions', [])])
@@ -265,26 +299,31 @@ if st.session_state.current_recommendations:
             
             if not item.get("is_expanded", False):
                 if c2.button("📄 View Recipe", key=f"view_{idx}", use_container_width=True):
-                    with st.spinner("Drafting recipe..."):
-                        try:
-                            expand_prompt = f"""
-                            You are an executive chef. Write a full recipe for this concept.
-                            Dish: {item['title']}
-                            Description: {item['description']}
-                            {LANGUAGE_RULES}
-                            Return JSON: {{"prep_time_mins": Integer, "ingredients": [{{"item": "String", "amount": Number, "unit": "String"}}], "instructions": ["Step 1", "Step 2"]}}
-                            """
-                            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                            m = genai.GenerativeModel(next((m for m in models if 'flash' in m), models[0]))
-                            res_json = json.loads(clean_json(m.generate_content(expand_prompt).text))
-                            
-                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["ingredients"] = res_json.get("ingredients", [])
-                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["instructions"] = res_json.get("instructions", [])
-                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["prep_time_mins"] = res_json.get("prep_time_mins", 15)
-                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
-                            st.rerun()
-                        except Exception:
-                            st.error("Failed to draft recipe.")
+                    # ULTRA-FAST UX: If ingredients exist in the DB, just toggle the view without calling AI!
+                    if len(item.get("ingredients", [])) > 0:
+                        st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
+                        st.rerun()
+                    else:
+                        with st.spinner("Drafting recipe..."):
+                            try:
+                                expand_prompt = f"""
+                                You are an executive chef. Write a full recipe for this concept.
+                                Dish: {item['title']}
+                                Description: {item['description']}
+                                {LANGUAGE_RULES}
+                                Return JSON: {{"prep_time_mins": Integer, "ingredients": [{{"item": "String", "amount": Number, "unit": "String"}}], "instructions": ["Step 1", "Step 2"]}}
+                                """
+                                models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                                m = genai.GenerativeModel(next((m for m in models if 'flash' in m), models[0]))
+                                res_json = json.loads(clean_json(m.generate_content(expand_prompt).text))
+                                
+                                st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["ingredients"] = res_json.get("ingredients", [])
+                                st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["instructions"] = res_json.get("instructions", [])
+                                st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["prep_time_mins"] = res_json.get("prep_time_mins", 15)
+                                st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
+                                st.rerun()
+                            except Exception:
+                                st.error("Failed to draft recipe.")
             else:
                 c2.button("✓ Recipe Loaded", key=f"loaded_{idx}", disabled=True, use_container_width=True)
 
@@ -293,26 +332,31 @@ if st.session_state.current_recommendations:
             
             if not item.get("is_expanded", False):
                 if c1.button("📄 View Recipe", key=f"view_{idx}", use_container_width=True):
-                    with st.spinner("Drafting recipe..."):
-                        try:
-                            expand_prompt = f"""
-                            You are an executive chef. Write a full recipe for this concept.
-                            Dish: {item['title']}
-                            Description: {item['description']}
-                            {LANGUAGE_RULES}
-                            Return JSON: {{"prep_time_mins": Integer, "ingredients": [{{"item": "String", "amount": Number, "unit": "String"}}], "instructions": ["Step 1", "Step 2"]}}
-                            """
-                            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                            m = genai.GenerativeModel(next((m for m in models if 'flash' in m), models[0]))
-                            res_json = json.loads(clean_json(m.generate_content(expand_prompt).text))
-                            
-                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["ingredients"] = res_json.get("ingredients", [])
-                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["instructions"] = res_json.get("instructions", [])
-                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["prep_time_mins"] = res_json.get("prep_time_mins", 15)
-                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
-                            st.rerun()
-                        except Exception:
-                            st.error("Failed to draft recipe.")
+                    # ULTRA-FAST UX
+                    if len(item.get("ingredients", [])) > 0:
+                        st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
+                        st.rerun()
+                    else:
+                        with st.spinner("Drafting recipe..."):
+                            try:
+                                expand_prompt = f"""
+                                You are an executive chef. Write a full recipe for this concept.
+                                Dish: {item['title']}
+                                Description: {item['description']}
+                                {LANGUAGE_RULES}
+                                Return JSON: {{"prep_time_mins": Integer, "ingredients": [{{"item": "String", "amount": Number, "unit": "String"}}], "instructions": ["Step 1", "Step 2"]}}
+                                """
+                                models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                                m = genai.GenerativeModel(next((m for m in models if 'flash' in m), models[0]))
+                                res_json = json.loads(clean_json(m.generate_content(expand_prompt).text))
+                                
+                                st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["ingredients"] = res_json.get("ingredients", [])
+                                st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["instructions"] = res_json.get("instructions", [])
+                                st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["prep_time_mins"] = res_json.get("prep_time_mins", 15)
+                                st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
+                                st.rerun()
+                            except Exception:
+                                st.error("Failed to draft recipe.")
                             
             if c2.button("💾 Save Option", type="primary", key=f"save_opt_{idx}", use_container_width=True):
                 if is_guest:
@@ -341,7 +385,6 @@ if st.session_state.current_recommendations:
             if is_guest:
                 st.success("Guest Mode: Itinerary saved locally. Log in to persist.")
                 st.session_state.current_recommendations = None
-                # Removing the instant st.rerun() so you can actually read the success message!
             elif supabase:
                 with st.spinner("Locking in your schedule..."):
                     for slot_data in plan:
