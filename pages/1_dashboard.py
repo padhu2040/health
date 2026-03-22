@@ -235,7 +235,12 @@ if generate_btn:
                     slot_data["selected_index"] = 0
                 st.session_state.current_recommendations = raw_data
             except Exception as e:
-                st.error(f"Live generation failed: {str(e)}")
+                # --- FRIENDLY RATE LIMIT HANDLER ---
+                error_msg = str(e)
+                if "429" in error_msg or "quota" in error_msg.lower():
+                    st.warning("⏳ Our AI chefs are experiencing high demand right now. Please wait about 60 seconds and try again!")
+                else:
+                    st.error(f"Live generation failed: {error_msg}")
         else:
             st.session_state.current_recommendations = {"daily_plan": daily_plan}
 
@@ -266,7 +271,7 @@ if st.session_state.current_recommendations:
             </div>
         """
         
-        # DEFENSIVE PROGRAMMING: Safely handle whatever string/dict the AI returns
+        # Defensive check for list formatting
         if item.get("is_expanded", False):
             ing_html_parts = []
             for ing in item.get('ingredients', []):
@@ -332,7 +337,12 @@ if st.session_state.current_recommendations:
                                 st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
                                 st.rerun()
                             except Exception as expand_err:
-                                st.error(f"Failed to draft recipe: {str(expand_err)}")
+                                # --- FRIENDLY RATE LIMIT HANDLER ---
+                                error_msg = str(expand_err)
+                                if "429" in error_msg or "quota" in error_msg.lower():
+                                    st.warning("⏳ Our AI chefs are experiencing high demand right now. Please wait about 60 seconds and try again!")
+                                else:
+                                    st.error(f"Failed to draft recipe: {error_msg}")
             else:
                 c2.button("✓ Recipe Loaded", key=f"loaded_{idx}", disabled=True, use_container_width=True)
 
@@ -364,7 +374,12 @@ if st.session_state.current_recommendations:
                                 st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
                                 st.rerun()
                             except Exception as expand_err:
-                                st.error(f"Failed to draft recipe: {str(expand_err)}")
+                                # --- FRIENDLY RATE LIMIT HANDLER ---
+                                error_msg = str(expand_err)
+                                if "429" in error_msg or "quota" in error_msg.lower():
+                                    st.warning("⏳ Our AI chefs are experiencing high demand right now. Please wait about 60 seconds and try again!")
+                                else:
+                                    st.error(f"Failed to draft recipe: {error_msg}")
                             
             if c2.button("💾 Save Option", type="primary", key=f"save_opt_{idx}", use_container_width=True):
                 if is_guest:
