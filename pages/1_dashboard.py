@@ -65,10 +65,10 @@ with col_date:
 st.write("---")
 
 # ==========================================
-# 4. THE AI RECOMMENDATION ENGINE
+# 4. THE AI MEAL PLANNER ENGINE
 # ==========================================
-st.subheader("🧠 The AI Chef's Table")
-st.markdown("Select your clinical, dietary, and cultural preferences.")
+st.subheader("🧠 Daily Menu Architect")
+st.markdown("Generate a full-day dietary overview. We can elaborate on specific recipes later.")
 
 # Row 1 of Preferences
 row1_c1, row1_c2, row1_c3 = st.columns(3)
@@ -89,111 +89,97 @@ with row1_c3:
     )
 
 # Row 2 of Preferences
-row2_c1, row2_c2, row2_c3 = st.columns(3)
+row2_c1, row2_c2 = st.columns(2)
 with row2_c1:
-    prep_time = st.selectbox(
-        "Maximum Prep Time", 
-        ["Under 15 mins", "Under 30 mins", "Weekend Project (60m+)"]
-    )
-with row2_c2:
     language = st.selectbox(
         "Output Language", 
         ["English", "Tamil (தமிழ்)"]
     )
-with row2_c3:
+with row2_c2:
     st.write("") # Spacer to align the button
-    generate_btn = st.button("Generate Tailored Menu", type="primary", use_container_width=True)
+    generate_btn = st.button("Generate Full Day Overview", type="primary", use_container_width=True)
 
 if generate_btn:
-    with st.spinner(f"Architecting {cuisine} recipes in {language}..."):
+    with st.spinner(f"Architecting a {health_focus} day plan in {language}..."):
         prompt = f"""
-        You are a clinical nutritionist and an executive chef. Generate 2 highly tailored meal recommendations.
+        You are an executive chef and clinical nutritionist. Generate a FULL DAY meal plan overview based on the following:
         Health Focus: {health_focus}.
         Dietary Protocol: {diet_type}.
         Cuisine Style: {cuisine}.
-        Max Prep Time: {prep_time}.
         
-        CRITICAL LANGUAGE RULE: You MUST write the ENTIRE response (including the title, description, ingredient items, and instructions) natively in {language}. Do NOT use English if Tamil is selected.
+        CRITICAL LANGUAGE RULE: You MUST write the ENTIRE response (titles, descriptions, categories) natively in {language}.
         
-        Return ONLY a valid JSON array of objects. No markdown formatting outside the JSON. Structure:
-        [
-          {{
-            "title": "String",
-            "description": "Short explanation of health benefits",
-            "prep_time_mins": Integer,
-            "macros": {{"calories": Integer, "protein": Integer, "carbs": Integer, "fat": Integer}},
-            "ingredients": [{{"item": "String", "amount": Number, "unit": "String"}}],
-            "instructions": ["Step 1", "Step 2", "Step 3"]
-          }}
-        ]
+        Do NOT generate full recipes with ingredients or instructions. Just provide a conceptual overview of the day.
+        Include exactly 5 meals in this logical order: Breakfast, Mid-Morning Snack, Lunch, Evening Snack/Soup, Dinner.
+        
+        Return ONLY a valid JSON object matching this exact structure:
+        {{
+          "daily_plan": [
+            {{
+              "slot": "String (e.g. Breakfast, Lunch)",
+              "category": "String (e.g. Fruit, Soup, Main Course, Light Snack)",
+              "title": "String (Name of the dish)",
+              "description": "Short explanation of why it fits the health focus",
+              "macros": {{"calories": Integer, "protein": Integer, "carbs": Integer, "fat": Integer}}
+            }}
+          ]
+        }}
         """
         try:
-            # ---------------------------------------------------------
-            # THE DYNAMIC MODEL MAPPER
-            # ---------------------------------------------------------
-            # 1. Ask Google what models this specific API key/SDK has access to
-            available_models = [
-                m.name for m in genai.list_models() 
-                if 'generateContent' in m.supported_generation_methods
-            ]
-            
+            # Dynamic Model Mapper
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
             if not available_models:
-                st.error("Error: No text-generation models found for this API key.")
+                st.error("Error: No text-generation models found.")
                 st.stop()
                 
-            # 2. Pick the best one (prefer a 'flash' model for speed, otherwise take the first one available)
             chosen_model = next((m for m in available_models if 'flash' in m), available_models[0])
-            
-            # 3. Use the confirmed working model string
             model = genai.GenerativeModel(chosen_model)
             response = model.generate_content(prompt)
-            # ---------------------------------------------------------
             
             st.session_state.current_recommendations = json.loads(clean_json(response.text))
             
         except Exception as e:
             st.error(f"AI Generation failed: {str(e)}")
 
-# Display Recommendations if they exist
+# ==========================================
+# 5. DISPLAY THE DAY CALENDAR
+# ==========================================
 if st.session_state.current_recommendations:
-    st.markdown("### Suggested Meals")
-    for idx, rec in enumerate(st.session_state.current_recommendations):
-        with st.expander(f"✨ {rec.get('title', 'Recipe')} ({rec.get('prep_time_mins', 0)} mins)"):
-            st.markdown(f"*{rec.get('description', '')}*")
+    plan = st.session_state.current_recommendations.get("daily_plan", [])
+    
+    st.markdown("### 📅 Proposed Itinerary")
+    
+    # Render the plan as a clean vertical timeline/grid
+    for item in plan:
+        with st.container():
+            st.markdown(f"""
+            <div style="background-color: #f8f9fa; border-left: 4px solid #27ae60; padding: 15px; margin-bottom: 10px; border-radius: 4px;">
+                <p style="margin: 0; color: #7f8c8d; font-size: 0.9em; font-weight: bold;">{item.get('slot', 'Meal')} &bull; {item.get('category', 'Food')}</p>
+                <h4 style="margin: 5px 0;">✨ {item.get('title', 'Unknown Dish')}</h4>
+                <p style="margin: 0; font-style: italic; color: #34495e;">{item.get('description', '')}</p>
+                <div style="margin-top: 10px; font-size: 0.85em; color: #7f8c8d;">
+                    <b>Cals:</b> {item.get('macros', {}).get('calories', 0)} | 
+                    <b>Pro:</b> {item.get('macros', {}).get('protein', 0)}g | 
+                    <b>Carbs:</b> {item.get('macros', {}).get('carbs', 0)}g | 
+                    <b>Fat:</b> {item.get('macros', {}).get('fat', 0)}g
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             
-            # Macros Grid
-            mac = rec.get('macros', {})
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Calories", mac.get('calories', 0))
-            m2.metric("Protein", f"{mac.get('protein', 0)}g")
-            m3.metric("Carbs", f"{mac.get('carbs', 0)}g")
-            m4.metric("Fat", f"{mac.get('fat', 0)}g")
-            
-            # Details Grid
-            col_ing, col_inst = st.columns(2)
-            with col_ing:
-                st.markdown("**Ingredients**")
-                for ing in rec.get('ingredients', []):
-                    st.write(f"- {ing.get('amount', '')} {ing.get('unit', '')} {ing.get('item', '')}")
-            with col_inst:
-                st.markdown("**How to Prepare**")
-                for step_num, step in enumerate(rec.get('instructions', []), 1):
-                    st.write(f"{step_num}. {step}")
-            
-            st.write("---")
-            
-            # Save Logic
-            slot = st.selectbox("Assign to:", ["Breakfast", "Lunch", "Dinner", "Snack"], key=f"slot_{idx}")
-            if st.button("Accept & Add to Today's Plan", key=f"save_{idx}", type="secondary"):
-                # 1. Save to Recipes
+    # Save the Entire Day Button
+    st.write("")
+    if st.button("💾 Accept & Save Full Itinerary", type="primary", use_container_width=True):
+        with st.spinner("Locking in your schedule..."):
+            for item in plan:
+                # 1. Save title to recipes (ingredients/instructions left empty to elaborate later)
                 recipe_payload = {
                     "user_id": user_id,
-                    "title": rec.get("title", "Unknown"),
-                    "description": rec.get("description", ""),
-                    "prep_time_mins": rec.get("prep_time_mins", 0),
-                    "macros": rec.get("macros", {}),
-                    "ingredients": rec.get("ingredients", []),
-                    "instructions": rec.get("instructions", []),
+                    "title": item.get("title", "Unknown"),
+                    "description": item.get("description", ""),
+                    "prep_time_mins": 0, # To be determined later
+                    "macros": item.get("macros", {}),
+                    "ingredients": [], # Blank for now
+                    "instructions": [], # Blank for now
                     "is_custom": False
                 }
                 res = supabase.table("recipes").insert(recipe_payload).execute()
@@ -203,34 +189,36 @@ if st.session_state.current_recommendations:
                 plan_payload = {
                     "user_id": user_id,
                     "plan_date": str(st.session_state.active_date),
-                    "meal_slot": slot,
+                    "meal_slot": item.get("slot", "Snack"),
                     "recipe_id": new_recipe_id
                 }
                 supabase.table("daily_plans").insert(plan_payload).execute()
                 
-                st.success("Added to your schedule!")
-                st.session_state.current_recommendations = None # Clear after saving
-                st.rerun()
+        st.success("Day planner updated successfully! Head to 'The Lab' later to expand these into full recipes.")
+        st.session_state.current_recommendations = None
+        st.rerun()
 
 st.write("---")
 
 # ==========================================
-# 5. TODAY's ITINERARY (Read from Database)
+# 6. TODAY's SAVED SCHEDULE (Read from DB)
 # ==========================================
-st.subheader(f"Scheduled for {st.session_state.active_date.strftime('%B %d, %Y')}")
+st.subheader(f"Locked Schedule for {st.session_state.active_date.strftime('%B %d, %Y')}")
 
 meals_res = supabase.table("daily_plans").select(
-    "meal_slot, recipes(title, prep_time_mins)"
+    "meal_slot, recipes(title, description)"
 ).eq("user_id", user_id).eq("plan_date", str(st.session_state.active_date)).execute()
 
 planned_meals = meals_res.data if meals_res.data else []
-slots = ["Breakfast", "Lunch", "Dinner", "Snack"]
 
-for slot in slots:
-    meal = next((m for m in planned_meals if m["meal_slot"] == slot), None)
-    with st.container():
-        if meal and meal.get("recipes"):
-            recipe = meal["recipes"]
-            st.info(f"🍽️ **{slot}**: {recipe['title']} (Prep: {recipe['prep_time_mins']} mins)")
-        else:
-            st.markdown(f"<p style='color: #bdc3c7;'>{slot}: Open</p>", unsafe_allow_html=True)
+if not planned_meals:
+    st.info("Your calendar is open for this date.")
+else:
+    for meal in planned_meals:
+        with st.container():
+            if meal and meal.get("recipes"):
+                recipe = meal["recipes"]
+                st.markdown(f"**{meal.get('meal_slot')}**")
+                st.markdown(f"🍽️ **{recipe['title']}**")
+                st.markdown(f"<span style='color: gray; font-size: 0.9em;'>{recipe.get('description', '')}</span>", unsafe_allow_html=True)
+                st.write("---")
