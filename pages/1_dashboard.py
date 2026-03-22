@@ -4,14 +4,15 @@ import google.generativeai as genai
 import json
 
 # ==========================================
-# 1. SETUP & SILENT AUTHENTICATION
+# 1. SETUP & AUTHENTICATION
 # ==========================================
 if "user" not in st.session_state or st.session_state.user is None:
     user_id = "11111111-1111-1111-1111-111111111111"
     is_guest = True
 else:
     user_id = st.session_state.user.id
-    is_guest = False
+    # Ensure guest bypass users from the login page are properly flagged
+    is_guest = (user_id == "11111111-1111-1111-1111-111111111111")
 
 if "supabase" not in st.session_state:
     try:
@@ -110,7 +111,7 @@ with st.expander("Filter Preferences", expanded=True):
         diet_type = st.selectbox("Protocol", ["Seasonal / Local", "Mediterranean", "Keto / Low Carb", "Plant-Based"])
     with col2:
         cuisine = st.selectbox("Cuisine", ["South Indian", "Global", "North Indian", "Pan-Asian", "Continental"])
-        language = st.selectbox("Language", ["English", "Tanglish (Tamil + English)", "Pure Tamil"])
+        language = st.selectbox("Language", ["English", "Pure Tamil", "Tanglish (Tamil + English)"])
 
 generate_btn = st.button("Generate Plan", type="primary", use_container_width=True)
 
@@ -123,19 +124,20 @@ if generate_btn:
     if planning_mode == "Full Day Itinerary":
         task_instruction = "Generate a FULL DAY meal plan overview. Include exactly 5 meals: Breakfast, Mid-Morning Snack, Lunch, Evening Snack, Dinner."
     else:
-        task_instruction = f"Do NOT generate a full day plan. I only need options for: {target_meal}. Generate exactly 5 distinct, creative options for this specific meal type so the user can choose their favorite."
+        task_instruction = f"Do NOT generate a full day plan. I only need options for: {target_meal}. Generate exactly 5 distinct, creative options for this specific meal type."
 
     with st.spinner("Compiling..."):
         prompt = f"""
-        You are a minimalist, high-end culinary nutritionist.
+        You are a minimalist culinary nutritionist.
         Focus: {health_focus}. Protocol: {diet_type}. Cuisine: {cuisine}.
         
         {task_instruction}
         
-        CRITICAL LANGUAGE RULES: 
-        1. If language is 'Tanglish (Tamil + English)': Use a natural, modern mix of proper Tamil script and English words. 
-        2. If language is 'Pure Tamil': Write strictly in formal Tamil script.
-        3. If language is 'English': Use standard English.
+        CRITICAL INSTRUCTIONS FOR LANGUAGE: {language}
+        You MUST write the values for "slot", "category", "title", and "description" in the requested language.
+        1. If 'Pure Tamil': You MUST write strictly in formal Tamil script (தமிழ்) for all text fields. NO ENGLISH WORDS.
+        2. If 'Tanglish (Tamil + English)': Use a natural, modern conversational mix of proper Tamil script and English words (e.g., "High Protein முளைகட்டிய பயறு salad").
+        3. If 'English': Use standard English.
         4. Always explicitly name specific native fruits/vegetables instead of generic terms.
         
         Return ONLY a valid JSON object matching this exact structure:
@@ -186,40 +188,40 @@ if st.session_state.current_recommendations:
         if st.session_state.current_mode == "Specific Meal":
             if st.button(f"Select Option {idx+1}", key=f"save_{idx}", use_container_width=True):
                 if is_guest:
-                    st.toast("Saved to local session. Log in to persist data.")
+                    st.success("Guest Mode: Option selected! Log in to permanently save.")
                     st.session_state.current_recommendations = None
-                    st.rerun()
                 elif supabase:
-                    res = supabase.table("recipes").insert({
-                        "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
-                        "prep_time_mins": 0, "macros": item.get("macros", {}), "ingredients": [], "instructions": [], "is_custom": False
-                    }).execute()
-                    supabase.table("daily_plans").insert({
-                        "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": item.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
-                    }).execute()
-                    st.toast("Saved to database.")
-                    st.session_state.current_recommendations = None
-                    st.rerun()
+                    with st.spinner("Saving..."):
+                        res = supabase.table("recipes").insert({
+                            "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
+                            "prep_time_mins": 0, "macros": item.get("macros", {}), "ingredients": [], "instructions": [], "is_custom": False
+                        }).execute()
+                        supabase.table("daily_plans").insert({
+                            "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": item.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
+                        }).execute()
+                        st.success("Saved to database.")
+                        st.session_state.current_recommendations = None
+                        st.rerun()
 
     if st.session_state.current_mode == "Full Day Itinerary":
         st.write("")
         if st.button("Save Full Itinerary", type="primary", use_container_width=True):
             if is_guest:
-                st.toast("Itinerary saved to local session. Log in to persist.")
+                st.success("Guest Mode: Itinerary simulated. Log in to permanently save.")
                 st.session_state.current_recommendations = None
-                st.rerun()
             elif supabase:
-                for item in plan:
-                    res = supabase.table("recipes").insert({
-                        "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
-                        "prep_time_mins": 0, "macros": item.get("macros", {}), "ingredients": [], "instructions": [], "is_custom": False
-                    }).execute()
-                    supabase.table("daily_plans").insert({
-                        "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": item.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
-                    }).execute()
-                st.toast("Itinerary saved.")
-                st.session_state.current_recommendations = None
-                st.rerun()
+                with st.spinner("Saving..."):
+                    for item in plan:
+                        res = supabase.table("recipes").insert({
+                            "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
+                            "prep_time_mins": 0, "macros": item.get("macros", {}), "ingredients": [], "instructions": [], "is_custom": False
+                        }).execute()
+                        supabase.table("daily_plans").insert({
+                            "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": item.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
+                        }).execute()
+                    st.success("Itinerary saved.")
+                    st.session_state.current_recommendations = None
+                    st.rerun()
 
 # ==========================================
 # 7. AGENDA VIEWER
