@@ -1,0 +1,33 @@
+name: AI Content Generator Engine
+
+# Run automatically every 6 hours
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  # Also allow manual triggers from the GitHub UI
+  workflow_dispatch:
+
+jobs:
+  build_database:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install supabase google-generativeai
+
+    - name: Run Content Engine
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: python content_generator.py
