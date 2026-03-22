@@ -4,14 +4,13 @@ import google.generativeai as genai
 import json
 
 # ==========================================
-# 1. SETUP & AUTHENTICATION
+# 1. SETUP & SILENT AUTHENTICATION
 # ==========================================
 if "user" not in st.session_state or st.session_state.user is None:
     user_id = "11111111-1111-1111-1111-111111111111"
     is_guest = True
 else:
     user_id = st.session_state.user.id
-    # Ensure guest bypass users from the login page are properly flagged
     is_guest = (user_id == "11111111-1111-1111-1111-111111111111")
 
 if "supabase" not in st.session_state:
@@ -124,7 +123,7 @@ if generate_btn:
     if planning_mode == "Full Day Itinerary":
         task_instruction = "Generate a FULL DAY meal plan overview. Include exactly 5 meals: Breakfast, Mid-Morning Snack, Lunch, Evening Snack, Dinner."
     else:
-        task_instruction = f"Do NOT generate a full day plan. I only need options for: {target_meal}. Generate exactly 5 distinct, creative options for this specific meal type."
+        task_instruction = f"Do NOT generate a full day plan. I only need options for: {target_meal}. Generate exactly 5 distinct, creative options for this specific meal type so the user can choose their favorite."
 
     with st.spinner("Compiling..."):
         prompt = f"""
@@ -134,9 +133,9 @@ if generate_btn:
         {task_instruction}
         
         CRITICAL INSTRUCTIONS FOR LANGUAGE: {language}
-        You MUST write the values for "slot", "category", "title", and "description" in the requested language.
-        1. If 'Pure Tamil': You MUST write strictly in formal Tamil script (தமிழ்) for all text fields. NO ENGLISH WORDS.
-        2. If 'Tanglish (Tamil + English)': Use a natural, modern conversational mix of proper Tamil script and English words (e.g., "High Protein முளைகட்டிய பயறு salad").
+        You MUST write the values for "slot", "category", "title", and "description" in the requested language. THIS IS A HARD RULE.
+        1. If 'Pure Tamil': You MUST write strictly in formal Tamil script (தமிழ்) for all text fields. Absolutely NO English words.
+        2. If 'Tanglish (Tamil + English)': Use a natural, modern conversational mix of proper Tamil script and English words (e.g., "High Protein முளைகட்டிய பயறு salad", "Kids-க்கு ஏற்ற healthy ஆன breakfast").
         3. If 'English': Use standard English.
         4. Always explicitly name specific native fruits/vegetables instead of generic terms.
         
@@ -185,13 +184,14 @@ if st.session_state.current_recommendations:
         </div>
         """, unsafe_allow_html=True)
         
+        # --- THE NEW "CREATE RECIPE" BUTTON UX ---
         if st.session_state.current_mode == "Specific Meal":
-            if st.button(f"Select Option {idx+1}", key=f"save_{idx}", use_container_width=True):
+            if st.button("🍳 Create Recipe", key=f"save_{idx}", use_container_width=True):
                 if is_guest:
-                    st.success("Guest Mode: Option selected! Log in to permanently save.")
+                    st.success("Guest Mode: Recipe chosen! Log in to permanently save it to your Lab.")
                     st.session_state.current_recommendations = None
                 elif supabase:
-                    with st.spinner("Saving..."):
+                    with st.spinner("Adding to your Lab..."):
                         res = supabase.table("recipes").insert({
                             "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
                             "prep_time_mins": 0, "macros": item.get("macros", {}), "ingredients": [], "instructions": [], "is_custom": False
@@ -199,18 +199,19 @@ if st.session_state.current_recommendations:
                         supabase.table("daily_plans").insert({
                             "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": item.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
                         }).execute()
-                        st.success("Saved to database.")
+                        
+                        st.success("✨ Recipe Created! Head over to **The Lab** to expand the full ingredients and cooking steps.")
                         st.session_state.current_recommendations = None
                         st.rerun()
 
     if st.session_state.current_mode == "Full Day Itinerary":
         st.write("")
-        if st.button("Save Full Itinerary", type="primary", use_container_width=True):
+        if st.button("💾 Create Full Itinerary", type="primary", use_container_width=True):
             if is_guest:
-                st.success("Guest Mode: Itinerary simulated. Log in to permanently save.")
+                st.success("Guest Mode: Itinerary created! Log in to permanently save to your Lab.")
                 st.session_state.current_recommendations = None
             elif supabase:
-                with st.spinner("Saving..."):
+                with st.spinner("Saving to your Lab..."):
                     for item in plan:
                         res = supabase.table("recipes").insert({
                             "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
@@ -219,7 +220,7 @@ if st.session_state.current_recommendations:
                         supabase.table("daily_plans").insert({
                             "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": item.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
                         }).execute()
-                    st.success("Itinerary saved.")
+                    st.success("✨ Itinerary Created! Head over to **The Lab** to generate the cooking instructions.")
                     st.session_state.current_recommendations = None
                     st.rerun()
 
