@@ -34,14 +34,17 @@ except Exception:
 # ==========================================
 if "current_recommendations" not in st.session_state:
     st.session_state.current_recommendations = None
+if "current_mode" not in st.session_state:
+    st.session_state.current_mode = "Full Day" # Tracks how to display the save buttons
 
 def clean_json(raw_text):
     text = raw_text.strip()
-    if text.startswith("```json"):
+    # Strip markdown code blocks safely
+    if text.startswith("```json"): 
         text = text[7:]
-    if text.startswith("```"):
+    if text.startswith("```"): 
         text = text[3:]
-    if text.endswith("```"):
+    if text.endswith("```"): 
         text = text[:-3]
     return text.strip()
 
@@ -55,12 +58,7 @@ col_title, col_date = st.columns([3, 1])
 with col_title:
     st.title("Command Center")
 with col_date:
-    st.date_input(
-        "Active Date", 
-        value=st.session_state.active_date, 
-        key="date_picker", 
-        on_change=update_active_date
-    )
+    st.date_input("Active Date", value=st.session_state.active_date, key="date_picker", on_change=update_active_date)
 
 st.write("---")
 
@@ -68,66 +66,64 @@ st.write("---")
 # 4. THE AI MEAL PLANNER ENGINE
 # ==========================================
 st.subheader("🧠 Daily Menu Architect")
-st.markdown("Generate a full-day dietary overview. We can elaborate on specific recipes later.")
 
-# Row 1 of Preferences
+# --- THE BRANCHING LOGIC UI ---
+planning_mode = st.radio("What are we planning today?", ["Full Day Itinerary", "Specific Meal or Snack"], horizontal=True)
+
+target_meal = None
+if planning_mode == "Specific Meal or Snack":
+    target_meal = st.selectbox("Select Target Meal", ["Breakfast", "Mid-Morning Snack", "Lunch", "Evening Snack / Soup", "Dinner", "Healthy Salad"])
+
+st.markdown("<br>", unsafe_allow_html=True) # Spacer
+
+# Preferences Rows
 row1_c1, row1_c2, row1_c3 = st.columns(3)
 with row1_c1:
-    health_focus = st.selectbox(
-        "Clinical Focus", 
-        [
-            "Maintain Health", 
-            "Weight Loss (Caloric Deficit)", 
-            "Reduce Cholesterol", 
-            "Fatty Liver Support", 
-            "Blood Sugar Control",
-            "Kids / Teenagers Nutrition"
-        ]
-    )
+    health_focus = st.selectbox("Clinical Focus", ["Maintain Health", "Weight Loss (Caloric Deficit)", "Reduce Cholesterol", "Fatty Liver Support", "Blood Sugar Control", "Kids / Teenagers Nutrition"])
 with row1_c2:
-    diet_type = st.selectbox(
-        "Dietary Protocol", 
-        ["Locavore / Seasonal", "Mediterranean", "Keto / Ultra Low Carb", "Vegan / Plant-Based"]
-    )
+    diet_type = st.selectbox("Dietary Protocol", ["Locavore / Seasonal", "Mediterranean", "Keto / Ultra Low Carb", "Vegan / Plant-Based"])
 with row1_c3:
-    cuisine = st.selectbox(
-        "Cuisine Style", 
-        ["Authentic South Indian", "Global / No Preference", "North Indian", "Pan-Asian", "Continental"]
-    )
+    cuisine = st.selectbox("Cuisine Style", ["Authentic South Indian", "Global / No Preference", "North Indian", "Pan-Asian", "Continental"])
 
-# Row 2 of Preferences
 row2_c1, row2_c2 = st.columns(2)
 with row2_c1:
-    language = st.selectbox(
-        "Output Language", 
-        ["English", "Tamil (Conversational Tanglish)"]
-    )
+    language = st.selectbox("Output Language", ["English", "Tamil (Conversational Tanglish)"])
 with row2_c2:
-    st.write("") # Spacer to align the button
-    generate_btn = st.button("Generate Full Day Overview", type="primary", use_container_width=True)
+    st.write("") 
+    generate_btn = st.button(f"Generate {planning_mode}", type="primary", use_container_width=True)
 
+# --- THE DYNAMIC PROMPT BUILDER ---
 if generate_btn:
-    with st.spinner(f"Architecting a {health_focus} day plan in {language}..."):
+    st.session_state.current_mode = planning_mode # Cache the mode for the rendering logic below
+    
+    # Adjust the core instruction based on the user's selection
+    if planning_mode == "Full Day Itinerary":
+        task_instruction = "Generate a FULL DAY meal plan overview. Include exactly 5 meals in this logical order: Breakfast, Mid-Morning Snack, Lunch, Evening Snack/Soup, Dinner."
+    else:
+        task_instruction = f"Do NOT generate a full day plan. I only need options for: {target_meal}. Generate exactly 3 distinct, creative options for this specific meal type so the user can choose their favorite."
+
+    with st.spinner(f"Architecting options in {language}..."):
         prompt = f"""
-        You are an executive chef and clinical nutritionist. Generate a FULL DAY meal plan overview based on the following:
+        You are an executive chef and clinical nutritionist. 
         Health Focus: {health_focus}.
         Dietary Protocol: {diet_type}.
         Cuisine Style: {cuisine}.
         
-        CRITICAL LANGUAGE & CONTENT RULES: 
-        1. If the language is 'Tamil (Conversational Tanglish)', you MUST write exactly how a modern person in Chennai speaks using a literal MIX of Tamil script and English script. Example: "ரொம்ப healthy ஆன High Protein சுண்டல்", "Kids-க்கு புடிச்ச மாதிரி tasty fruit bowl". Use English words/script for concepts like 'protein', 'healthy', 'weight loss', 'fiber', 'snack' mixed right into the Tamil sentence.
-        2. If the language is 'English', use standard English.
-        3. INGREDIENT SPECIFICITY: Whenever you recommend a fruit bowl, vegetable salad, or mixed dish, you MUST explicitly name the specific fruits and vegetables. Never just say "Fruit bowl" or "Veg salad".
-        4. TRADITIONAL INGREDIENTS: Actively include traditional and native vegetables and fruits (e.g., Murungakkai (Drumstick), Vazhaithandu (Plantain stem), Avarakkai, Koyyapazham (Guava), Pappali (Papaya), Nelli (Amla), Pomegranate).
+        {task_instruction}
         
-        Do NOT generate full recipes with cooking instructions. Just provide a conceptual overview of the day.
-        Include exactly 5 meals in this logical order: Breakfast, Mid-Morning Snack, Lunch, Evening Snack/Soup, Dinner.
+        CRITICAL LANGUAGE & CONTENT RULES: 
+        1. If the language is 'Tamil (Conversational Tanglish)', you MUST write exactly how a modern person in Chennai speaks using a literal MIX of Tamil script and English script. Example: "ரொம்ப healthy ஆன High Protein சுண்டல்", "Kids-க்கு புடிச்ச மாதிரி tasty fruit bowl". 
+        2. If the language is 'English', use standard English.
+        3. INGREDIENT SPECIFICITY: Whenever you recommend a fruit bowl, vegetable salad, or mixed dish, explicitly name the specific fruits and vegetables.
+        4. TRADITIONAL INGREDIENTS: Actively include traditional and native vegetables/fruits (e.g., Murungakkai, Vazhaithandu, Avarakkai, Koyyapazham).
+        
+        Do NOT generate full recipes with cooking instructions. Just provide a conceptual overview.
         
         Return ONLY a valid JSON object matching this exact structure:
         {{
           "daily_plan": [
             {{
-              "slot": "String (e.g. Breakfast, Lunch)",
+              "slot": "String (e.g. Breakfast, Lunch, or the specific target meal)",
               "category": "String (e.g. Traditional Breakfast, Healthy Snack)",
               "title": "String (Name of the dish)",
               "description": "Short explanation of why it fits the health focus, naming the specific traditional fruits/veggies used.",
@@ -137,7 +133,6 @@ if generate_btn:
         }}
         """
         try:
-            # Dynamic Model Mapper
             available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
             if not available_models:
                 st.error("Error: No text-generation models found.")
@@ -153,18 +148,17 @@ if generate_btn:
             st.error(f"AI Generation failed: {str(e)}")
 
 # ==========================================
-# 5. DISPLAY THE DAY CALENDAR
+# 5. DISPLAY & DYNAMIC SAVE LOGIC
 # ==========================================
 if st.session_state.current_recommendations:
     plan = st.session_state.current_recommendations.get("daily_plan", [])
     
-    st.markdown("### 📅 Proposed Itinerary")
+    st.markdown(f"### 📅 Proposed {st.session_state.current_mode}")
     
-    # Render the plan as a clean vertical timeline/grid
-    for item in plan:
+    for idx, item in enumerate(plan):
         with st.container():
             st.markdown(f"""
-            <div style="background-color: #ffffff; border-left: 4px solid #27ae60; border-top: 1px solid #eaeaea; border-right: 1px solid #eaeaea; border-bottom: 1px solid #eaeaea; padding: 15px; margin-bottom: 10px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="background-color: #ffffff; border-left: 4px solid #27ae60; border: 1px solid #eaeaea; padding: 15px; margin-bottom: 10px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                 <p style="margin: 0; color: #7f8c8d; font-size: 0.9em; font-weight: bold;">{item.get('slot', 'Meal')} &bull; {item.get('category', 'Food')}</p>
                 <h4 style="margin: 5px 0;">✨ {item.get('title', 'Unknown Dish')}</h4>
                 <p style="margin: 0; font-style: italic; color: #34495e;">{item.get('description', '')}</p>
@@ -177,46 +171,46 @@ if st.session_state.current_recommendations:
             </div>
             """, unsafe_allow_html=True)
             
-    # Save the Entire Day Button
-    st.write("")
-    if st.button("💾 Accept & Save Full Itinerary", type="primary", use_container_width=True):
-        
-        # --- THE GUEST MODE INTERCEPTOR ---
-        if user_id == "11111111-1111-1111-1111-111111111111":
-            st.success("🚀 **Guest Mode:** Itinerary 'saved' locally for testing! To persist this to your calendar and unlock The Lab, please log out and create a free account.")
-            st.session_state.current_recommendations = None
-            
-        else:
-            # --- THE REAL DATABASE SAVE ---
-            with st.spinner("Locking in your schedule..."):
-                try:
+            # If in "Specific Meal" mode, render a save button for EACH individual option
+            if st.session_state.current_mode == "Specific Meal or Snack":
+                if st.button(f"📥 Choose Option {idx+1}", key=f"save_single_{idx}"):
+                    if user_id == "11111111-1111-1111-1111-111111111111":
+                        st.success("🚀 **Guest Mode:** Meal selected! Create an account to permanently save.")
+                        st.session_state.current_recommendations = None
+                        st.rerun()
+                    else:
+                        with st.spinner("Saving meal..."):
+                            res = supabase.table("recipes").insert({
+                                "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
+                                "prep_time_mins": 0, "macros": item.get("macros", {}), "ingredients": [], "instructions": [], "is_custom": False
+                            }).execute()
+                            supabase.table("daily_plans").insert({
+                                "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": item.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
+                            }).execute()
+                        st.success("Meal added to today's plan!")
+                        st.session_state.current_recommendations = None
+                        st.rerun()
+
+    # If in "Full Day" mode, render the single bulk save button at the bottom
+    if st.session_state.current_mode == "Full Day Itinerary":
+        st.write("")
+        if st.button("💾 Accept & Save Full Itinerary", type="primary", use_container_width=True):
+            if user_id == "11111111-1111-1111-1111-111111111111":
+                st.success("🚀 **Guest Mode:** Itinerary saved locally for testing! Create a free account to persist.")
+                st.session_state.current_recommendations = None
+            else:
+                with st.spinner("Locking in your schedule..."):
                     for item in plan:
-                        recipe_payload = {
-                            "user_id": user_id,
-                            "title": item.get("title", "Unknown"),
-                            "description": item.get("description", ""),
-                            "prep_time_mins": 0, 
-                            "macros": item.get("macros", {}),
-                            "ingredients": [], 
-                            "instructions": [], 
-                            "is_custom": False
-                        }
-                        res = supabase.table("recipes").insert(recipe_payload).execute()
-                        new_recipe_id = res.data[0]["id"]
-                        
-                        plan_payload = {
-                            "user_id": user_id,
-                            "plan_date": str(st.session_state.active_date),
-                            "meal_slot": item.get("slot", "Snack"),
-                            "recipe_id": new_recipe_id
-                        }
-                        supabase.table("daily_plans").insert(plan_payload).execute()
-                        
-                    st.success("Day planner updated successfully! Head to 'The Lab' later to expand these into full recipes.")
+                        res = supabase.table("recipes").insert({
+                            "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
+                            "prep_time_mins": 0, "macros": item.get("macros", {}), "ingredients": [], "instructions": [], "is_custom": False
+                        }).execute()
+                        supabase.table("daily_plans").insert({
+                            "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": item.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
+                        }).execute()
+                    st.success("Day planner updated successfully!")
                     st.session_state.current_recommendations = None
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Database Error: {str(e)}")
 
 st.write("---")
 
