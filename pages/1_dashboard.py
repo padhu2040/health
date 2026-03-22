@@ -48,7 +48,6 @@ def clean_json(raw_text):
 def update_active_date():
     st.session_state.active_date = st.session_state.date_picker
 
-# --- PREMIUM MINIMALIST CSS ---
 st.markdown("""
 <style>
     .premium-card {
@@ -159,13 +158,12 @@ You MUST write the values for "category", "title", "description", "ingredients",
 # 5. CACHE-WITH-FALLBACK ENGINE
 # ==========================================
 def fetch_vault_options(slot_name, required_count):
-    """Attempts to pull required recipes directly from Supabase."""
     if not supabase: return []
     res = supabase.table("recipe_bank").select("*").eq("health_focus", health_focus).eq("diet_type", diet_type).eq("cuisine", cuisine).eq("language", language).eq("meal_slot", slot_name).limit(20).execute()
     data = res.data if res.data else []
     
     if len(data) >= required_count:
-        random.shuffle(data) # Ensure variety
+        random.shuffle(data)
         formatted_options = []
         for d in data[:required_count]:
             formatted_options.append({
@@ -176,21 +174,22 @@ def fetch_vault_options(slot_name, required_count):
                 "prep_time_mins": d.get("prep_time_mins", 15),
                 "ingredients": d.get("ingredients", []),
                 "instructions": d.get("instructions", []),
-                "is_expanded": False # We leave it collapsed initially
+                "is_expanded": False
             })
         return formatted_options
-    return [] # Cache Miss
+    return []
 
 if generate_btn:
     st.session_state.current_mode = planning_mode 
     slots_needed = ["Breakfast", "Mid-Morning Snack", "Lunch", "Evening Snack / Soup", "Dinner"] if planning_mode == "Full Day Itinerary" else [target_meal]
+    
+    # We want 3 options per slot IF cached, but fallback will only generate 1 to prevent API timeout.
     options_per_slot = 3 if planning_mode == "Full Day Itinerary" else 5
     
     with st.spinner("Checking Recipe Vault..."):
         daily_plan = []
         cache_miss = False
         
-        # 1. Attempt to build the plan entirely from the DB Cache
         for slot in slots_needed:
             options = fetch_vault_options(slot, options_per_slot)
             if not options:
@@ -198,13 +197,14 @@ if generate_btn:
                 break
             daily_plan.append({"slot": slot, "selected_index": 0, "options": options})
 
-        # 2. If Cache Miss, Fallback to Live AI Generation
         if cache_miss:
             st.toast("Vault expanding... Drafting live AI recipes!", icon="🧠")
+            
+            # TOKEN SAFEGUARD: Fallback generates exactly ONE option per slot to prevent JSON truncation
             if planning_mode == "Full Day Itinerary":
-                task_instruction = "Generate a FULL DAY meal plan with 5 slots: Breakfast, Mid-Morning Snack, Lunch, Evening Snack, Dinner. For EACH slot, generate exactly 3 distinct recipe options."
+                task_instruction = "Generate a FULL DAY meal plan with 5 slots: Breakfast, Mid-Morning Snack, Lunch, Evening Snack, Dinner. For EACH slot, generate EXACTLY 1 distinct recipe option."
             else:
-                task_instruction = f"Do NOT generate a full day plan. Generate exactly 5 distinct, creative options for ONE specific meal slot: {target_meal}."
+                task_instruction = f"Do NOT generate a full day plan. Generate EXACTLY 3 distinct, creative options for ONE specific meal slot: {target_meal}."
 
             prompt = f"""
             You are a minimalist culinary nutritionist. Focus: {health_focus}. Protocol: {diet_type}. Cuisine: {cuisine}.
@@ -237,9 +237,9 @@ if generate_btn:
                     slot_data["selected_index"] = 0
                 st.session_state.current_recommendations = raw_data
             except Exception as e:
-                st.error("Live generation failed. Please try again.")
+                # Print the exact error so we can debug if it happens again
+                st.error(f"Live generation failed: {str(e)}")
         else:
-            # 3. Cache Hit! Assemble state instantly.
             st.session_state.current_recommendations = {"daily_plan": daily_plan}
 
 # ==========================================
@@ -256,7 +256,6 @@ if st.session_state.current_recommendations:
         if not options: continue
         item = options[curr_idx]
         
-        # --- RENDER THE HTML CARD ---
         html_card = f"""
         <div class="premium-card">
             <div class="premium-tag">{slot_data.get('slot', '')} &bull; {item.get('category', '')}</div>
@@ -286,7 +285,6 @@ if st.session_state.current_recommendations:
         html_card += "</div>"
         st.markdown(html_card, unsafe_allow_html=True)
         
-        # --- ACTION BUTTONS ROW ---
         st.markdown('<div class="button-row">', unsafe_allow_html=True)
         
         if st.session_state.current_mode == "Full Day Itinerary":
@@ -299,7 +297,6 @@ if st.session_state.current_recommendations:
             
             if not item.get("is_expanded", False):
                 if c2.button("📄 View Recipe", key=f"view_{idx}", use_container_width=True):
-                    # ULTRA-FAST UX: If ingredients exist in the DB, just toggle the view without calling AI!
                     if len(item.get("ingredients", [])) > 0:
                         st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
                         st.rerun()
@@ -322,8 +319,8 @@ if st.session_state.current_recommendations:
                                 st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["prep_time_mins"] = res_json.get("prep_time_mins", 15)
                                 st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
                                 st.rerun()
-                            except Exception:
-                                st.error("Failed to draft recipe.")
+                            except Exception as expand_err:
+                                st.error(f"Failed to draft recipe: {str(expand_err)}")
             else:
                 c2.button("✓ Recipe Loaded", key=f"loaded_{idx}", disabled=True, use_container_width=True)
 
@@ -332,7 +329,6 @@ if st.session_state.current_recommendations:
             
             if not item.get("is_expanded", False):
                 if c1.button("📄 View Recipe", key=f"view_{idx}", use_container_width=True):
-                    # ULTRA-FAST UX
                     if len(item.get("ingredients", [])) > 0:
                         st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
                         st.rerun()
@@ -355,14 +351,13 @@ if st.session_state.current_recommendations:
                                 st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["prep_time_mins"] = res_json.get("prep_time_mins", 15)
                                 st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
                                 st.rerun()
-                            except Exception:
-                                st.error("Failed to draft recipe.")
+                            except Exception as expand_err:
+                                st.error(f"Failed to draft recipe: {str(expand_err)}")
                             
             if c2.button("💾 Save Option", type="primary", key=f"save_opt_{idx}", use_container_width=True):
                 if is_guest:
                     st.success("Guest Mode: Option saved locally. Log in to persist.")
                     st.session_state.current_recommendations = None
-                    st.rerun()
                 elif supabase:
                     with st.spinner("Saving to Lab..."):
                         res = supabase.table("recipes").insert({
@@ -378,7 +373,6 @@ if st.session_state.current_recommendations:
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # BULK SAVE FOR FULL DAY
     if st.session_state.current_mode == "Full Day Itinerary":
         st.write("---")
         if st.button("💾 Save Entire Itinerary to Lab", type="primary", use_container_width=True):
