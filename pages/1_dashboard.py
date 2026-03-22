@@ -47,43 +47,73 @@ def clean_json(raw_text):
 def update_active_date():
     st.session_state.active_date = st.session_state.date_picker
 
+# --- PREMIUM MINIMALIST CSS ---
 st.markdown("""
 <style>
-    .flat-card {
+    .premium-card {
         background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        padding: 20px;
-        margin-bottom: 8px;
-        border-radius: 2px;
+        border: 1px solid #eaeaea;
+        padding: 24px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        margin-bottom: 0px; /* Snug fit against buttons */
     }
-    .flat-tag {
+    .premium-tag {
         font-size: 0.75em;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: #777;
-        margin-bottom: 4px;
+        letter-spacing: 0.8px;
+        color: #888;
+        margin-bottom: 6px;
+        font-weight: 500;
     }
-    .flat-title {
-        font-size: 1.1em;
+    .premium-title {
+        font-size: 1.25em;
         font-weight: 600;
         color: #111;
-        margin-bottom: 6px;
         margin-top: 0px;
+        margin-bottom: 8px;
+        line-height: 1.3;
     }
-    .flat-desc {
-        font-size: 0.9em;
-        color: #444;
+    .premium-desc {
+        font-size: 0.95em;
+        color: #555;
         margin-bottom: 16px;
-        line-height: 1.5;
+        line-height: 1.6;
     }
-    .flat-macros {
-        font-size: 0.8em;
-        color: #888;
-        border-top: 1px solid #eee;
-        padding-top: 12px;
+    .premium-macros {
+        font-size: 0.85em;
+        color: #777;
+        background-color: #fcfcfc;
+        padding: 10px 14px;
+        border-radius: 4px;
+        display: inline-block;
+        border: 1px solid #f0f0f0;
     }
-    .action-container {
-        margin-bottom: 24px;
+    
+    /* Expanded Recipe Typography */
+    .recipe-section {
+        margin-top: 24px;
+        padding-top: 24px;
+        border-top: 1px solid #eaeaea;
+    }
+    .recipe-header {
+        font-size: 0.9em;
+        font-weight: 600;
+        color: #111;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 12px;
+    }
+    .recipe-list {
+        font-size: 0.95em;
+        color: #444;
+        line-height: 1.7;
+        margin-bottom: 20px;
+        padding-left: 20px;
+    }
+    .button-row {
+        margin-top: 8px;
+        margin-bottom: 32px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -119,8 +149,8 @@ generate_btn = st.button("Generate Plan", type="primary", use_container_width=Tr
 
 LANGUAGE_RULES = f"""
 CRITICAL INSTRUCTIONS FOR LANGUAGE: {language}
-You MUST write the values for "category", "title", and "description" in the requested language.
-1. If 'Pure Tamil': You MUST write strictly in formal Tamil script (தமிழ்) for all text fields. Absolutely NO English words.
+You MUST write the values for "category", "title", "description", "ingredients", and "instructions" in the requested language.
+1. If 'Pure Tamil': Write strictly in formal Tamil script (தமிழ்). NO English words.
 2. If 'Tanglish (Tamil + English)': Use a natural, modern conversational mix of proper Tamil script and English words.
 3. If 'English': Use standard English.
 4. Always explicitly name specific native fruits/vegetables instead of generic terms.
@@ -139,11 +169,9 @@ if generate_btn:
 
     with st.spinner("Compiling Options Matrix..."):
         prompt = f"""
-        You are a minimalist culinary nutritionist.
-        Focus: {health_focus}. Protocol: {diet_type}. Cuisine: {cuisine}.
+        You are a minimalist culinary nutritionist. Focus: {health_focus}. Protocol: {diet_type}. Cuisine: {cuisine}.
         
         {task_instruction}
-        
         {LANGUAGE_RULES}
         
         Return ONLY a valid JSON object matching this exact nested structure:
@@ -156,7 +184,11 @@ if generate_btn:
                   "category": "String",
                   "title": "String",
                   "description": "String",
-                  "macros": {{"calories": Integer, "protein": Integer, "carbs": Integer, "fat": Integer}}
+                  "macros": {{"calories": Integer, "protein": Integer, "carbs": Integer, "fat": Integer}},
+                  "is_expanded": false,
+                  "prep_time_mins": 0,
+                  "ingredients": [],
+                  "instructions": []
                 }}
               ]
             }}
@@ -169,7 +201,6 @@ if generate_btn:
             model = genai.GenerativeModel(chosen_model)
             response = model.generate_content(prompt)
             
-            # Parse and initialize the UI state index for each slot
             raw_data = json.loads(clean_json(response.text))
             for slot_data in raw_data.get("daily_plan", []):
                 slot_data["selected_index"] = 0
@@ -179,114 +210,159 @@ if generate_btn:
             st.error("Generation failed. Please try again.")
 
 # ==========================================
-# 6. RESULTS & ZERO-LATENCY CURATION
+# 6. RESULTS, CURATION & INLINE ELABORATION
 # ==========================================
 if st.session_state.current_recommendations:
     plan = st.session_state.current_recommendations.get("daily_plan", [])
     st.write("---")
     st.markdown(f"<h3 style='font-weight: 400;'>Proposed {st.session_state.current_mode}</h3>", unsafe_allow_html=True)
     
-    # -----------------------------------------------------
-    # MODE A: FULL DAY ITINERARY (With Local Swapping)
-    # -----------------------------------------------------
-    if st.session_state.current_mode == "Full Day Itinerary":
-        for idx, slot_data in enumerate(plan):
-            curr_idx = slot_data.get("selected_index", 0)
-            options = slot_data.get("options", [])
-            
-            # Failsafe if AI returned an empty options array
-            if not options: continue
-            
-            item = options[curr_idx]
-            
-            st.markdown(f"""
-            <div class="flat-card">
-                <div class="flat-tag">{slot_data.get('slot', '')} &bull; {item.get('category', '')}</div>
-                <h4 class="flat-title">{item.get('title', 'Dish')}</h4>
-                <div class="flat-desc">{item.get('description', '')}</div>
-                <div class="flat-macros">
-                    Cals: {item.get('macros', {}).get('calories', 0)} &bull; 
-                    Pro: {item.get('macros', {}).get('protein', 0)}g &bull; 
-                    Carb: {item.get('macros', {}).get('carbs', 0)}g &bull; 
-                    Fat: {item.get('macros', {}).get('fat', 0)}g
-                </div>
+    for idx, slot_data in enumerate(plan):
+        curr_idx = slot_data.get("selected_index", 0)
+        options = slot_data.get("options", [])
+        if not options: continue
+        item = options[curr_idx]
+        
+        # --- RENDER THE HTML CARD ---
+        html_card = f"""
+        <div class="premium-card">
+            <div class="premium-tag">{slot_data.get('slot', '')} &bull; {item.get('category', '')}</div>
+            <h4 class="premium-title">{item.get('title', 'Dish')}</h4>
+            <div class="premium-desc">{item.get('description', '')}</div>
+            <div class="premium-macros">
+                Cals: {item.get('macros', {}).get('calories', 0)} | 
+                Pro: {item.get('macros', {}).get('protein', 0)}g | 
+                Carb: {item.get('macros', {}).get('carbs', 0)}g | 
+                Fat: {item.get('macros', {}).get('fat', 0)}g
             </div>
-            """, unsafe_allow_html=True)
+        """
+        
+        # If the user has expanded the recipe, render the ingredients and instructions
+        if item.get("is_expanded", False):
+            ing_html = "".join([f"<li>{ing.get('amount','')} {ing.get('unit','')} {ing.get('item','')}</li>" for ing in item.get('ingredients', [])])
+            inst_html = "".join([f"<li>{step}</li>" for step in item.get('instructions', [])])
             
-            st.markdown('<div class="action-container">', unsafe_allow_html=True)
-            col_swap, col_space = st.columns([2, 4])
-            with col_swap:
-                # INSTANT SWAP BUTTON
-                if len(options) > 1:
-                    if st.button(f"🔄 Swap (Option {curr_idx + 1}/{len(options)})", key=f"swap_{idx}", use_container_width=True):
-                        st.session_state.current_recommendations["daily_plan"][idx]["selected_index"] = (curr_idx + 1) % len(options)
-                        st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+            html_card += f"""
+            <div class="recipe-section">
+                <div class="recipe-header">Ingredients</div>
+                <ul class="recipe-list">{ing_html}</ul>
+                <div class="recipe-header">Preparation ({item.get('prep_time_mins', 0)} mins)</div>
+                <ol class="recipe-list">{inst_html}</ol>
+            </div>
+            """
+            
+        html_card += "</div>" # Close Card
+        st.markdown(html_card, unsafe_allow_html=True)
+        
+        # --- ACTION BUTTONS ROW ---
+        st.markdown('<div class="button-row">', unsafe_allow_html=True)
+        
+        # Dynamic Columns based on state
+        if st.session_state.current_mode == "Full Day Itinerary":
+            c1, c2, c3 = st.columns([1, 1, 2])
+            
+            # SWAP BUTTON
+            if len(options) > 1:
+                if c1.button(f"⟳ Swap ({curr_idx + 1}/{len(options)})", key=f"swap_{idx}", use_container_width=True):
+                    st.session_state.current_recommendations["daily_plan"][idx]["selected_index"] = (curr_idx + 1) % len(options)
+                    st.rerun()
+            
+            # EXPAND RECIPE BUTTON
+            if not item.get("is_expanded", False):
+                if c2.button("📄 View Recipe", key=f"view_{idx}", use_container_width=True):
+                    with st.spinner("Drafting recipe..."):
+                        try:
+                            expand_prompt = f"""
+                            You are an executive chef. Write a full recipe for this concept.
+                            Dish: {item['title']}
+                            Description: {item['description']}
+                            {LANGUAGE_RULES}
+                            Return JSON: {{"prep_time_mins": Integer, "ingredients": [{{"item": "String", "amount": Number, "unit": "String"}}], "instructions": ["Step 1", "Step 2"]}}
+                            """
+                            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                            m = genai.GenerativeModel(next((m for m in models if 'flash' in m), models[0]))
+                            res_json = json.loads(clean_json(m.generate_content(expand_prompt).text))
+                            
+                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["ingredients"] = res_json.get("ingredients", [])
+                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["instructions"] = res_json.get("instructions", [])
+                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["prep_time_mins"] = res_json.get("prep_time_mins", 15)
+                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
+                            st.rerun()
+                        except Exception:
+                            st.error("Failed to draft recipe.")
+            else:
+                c2.button("✓ Recipe Loaded", key=f"loaded_{idx}", disabled=True, use_container_width=True)
 
-        # Bulk Save
+        elif st.session_state.current_mode == "Specific Meal":
+            # Specific Meal mode: User just picks one option
+            c1, c2, c3 = st.columns([1, 1, 2])
+            
+            if not item.get("is_expanded", False):
+                if c1.button("📄 View Recipe", key=f"view_{idx}", use_container_width=True):
+                    with st.spinner("Drafting recipe..."):
+                        try:
+                            expand_prompt = f"""
+                            You are an executive chef. Write a full recipe for this concept.
+                            Dish: {item['title']}
+                            Description: {item['description']}
+                            {LANGUAGE_RULES}
+                            Return JSON: {{"prep_time_mins": Integer, "ingredients": [{{"item": "String", "amount": Number, "unit": "String"}}], "instructions": ["Step 1", "Step 2"]}}
+                            """
+                            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                            m = genai.GenerativeModel(next((m for m in models if 'flash' in m), models[0]))
+                            res_json = json.loads(clean_json(m.generate_content(expand_prompt).text))
+                            
+                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["ingredients"] = res_json.get("ingredients", [])
+                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["instructions"] = res_json.get("instructions", [])
+                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["prep_time_mins"] = res_json.get("prep_time_mins", 15)
+                            st.session_state.current_recommendations["daily_plan"][idx]["options"][curr_idx]["is_expanded"] = True
+                            st.rerun()
+                        except Exception:
+                            st.error("Failed to draft recipe.")
+                            
+            if c2.button("💾 Save Option", type="primary", key=f"save_opt_{idx}", use_container_width=True):
+                if is_guest:
+                    st.success("Guest Mode: Option saved to session.")
+                    st.session_state.current_recommendations = None
+                    st.rerun()
+                elif supabase:
+                    res = supabase.table("recipes").insert({
+                        "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
+                        "prep_time_mins": item.get("prep_time_mins", 0), "macros": item.get("macros", {}), "ingredients": item.get("ingredients", []), "instructions": item.get("instructions", []), "is_custom": False
+                    }).execute()
+                    supabase.table("daily_plans").insert({
+                        "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": slot_data.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
+                    }).execute()
+                    st.success("Saved to Lab!")
+                    st.session_state.current_recommendations = None
+                    st.rerun()
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # BULK SAVE FOR FULL DAY
+    if st.session_state.current_mode == "Full Day Itinerary":
         st.write("---")
-        if st.button("💾 Create Full Itinerary", type="primary", use_container_width=True):
+        if st.button("💾 Save Entire Itinerary to Lab", type="primary", use_container_width=True):
             if is_guest:
-                st.success("Guest Mode: Itinerary created! Log in to permanently save to your Lab.")
+                st.success("Guest Mode: Itinerary saved to session. Log in to persist.")
                 st.session_state.current_recommendations = None
+                st.rerun()
             elif supabase:
-                with st.spinner("Saving to your Lab..."):
+                with st.spinner("Locking in your schedule..."):
                     for slot_data in plan:
                         curr_idx = slot_data.get("selected_index", 0)
                         item = slot_data["options"][curr_idx]
                         
                         res = supabase.table("recipes").insert({
                             "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
-                            "prep_time_mins": 0, "macros": item.get("macros", {}), "ingredients": [], "instructions": [], "is_custom": False
+                            "prep_time_mins": item.get("prep_time_mins", 0), "macros": item.get("macros", {}), "ingredients": item.get("ingredients", []), "instructions": item.get("instructions", []), "is_custom": False
                         }).execute()
                         supabase.table("daily_plans").insert({
                             "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": slot_data.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
                         }).execute()
-                    st.success("✨ Itinerary Created! Head over to The Lab.")
+                    st.success("Full Itinerary Saved to The Lab!")
                     st.session_state.current_recommendations = None
                     st.rerun()
-
-    # -----------------------------------------------------
-    # MODE B: SPECIFIC MEAL (Pick 1 from 5 options)
-    # -----------------------------------------------------
-    elif st.session_state.current_mode == "Specific Meal" and len(plan) > 0:
-        slot_data = plan[0] # Specific meal only has 1 slot array
-        options = slot_data.get("options", [])
-        
-        for opt_idx, item in enumerate(options):
-            st.markdown(f"""
-            <div class="flat-card">
-                <div class="flat-tag">{slot_data.get('slot', '')} Option {opt_idx + 1} &bull; {item.get('category', '')}</div>
-                <h4 class="flat-title">{item.get('title', 'Dish')}</h4>
-                <div class="flat-desc">{item.get('description', '')}</div>
-                <div class="flat-macros">
-                    Cals: {item.get('macros', {}).get('calories', 0)} &bull; 
-                    Pro: {item.get('macros', {}).get('protein', 0)}g &bull; 
-                    Carb: {item.get('macros', {}).get('carbs', 0)}g &bull; 
-                    Fat: {item.get('macros', {}).get('fat', 0)}g
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown('<div class="action-container">', unsafe_allow_html=True)
-            if st.button(f"🍳 Create Recipe {opt_idx+1}", key=f"save_specific_{opt_idx}"):
-                if is_guest:
-                    st.success("Guest Mode: Recipe chosen! Log in to permanently save.")
-                    st.session_state.current_recommendations = None
-                    st.rerun()
-                elif supabase:
-                    with st.spinner("Adding to your Lab..."):
-                        res = supabase.table("recipes").insert({
-                            "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
-                            "prep_time_mins": 0, "macros": item.get("macros", {}), "ingredients": [], "instructions": [], "is_custom": False
-                        }).execute()
-                        supabase.table("daily_plans").insert({
-                            "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": slot_data.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
-                        }).execute()
-                        st.success("✨ Recipe Created! Head over to The Lab.")
-                        st.session_state.current_recommendations = None
-                        st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
 # 7. AGENDA VIEWER
