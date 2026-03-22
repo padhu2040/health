@@ -56,7 +56,7 @@ st.markdown("""
         padding: 24px;
         border-radius: 8px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-        margin-bottom: 0px; /* Snug fit against buttons */
+        margin-bottom: 0px; 
     }
     .premium-tag {
         font-size: 0.75em;
@@ -89,8 +89,6 @@ st.markdown("""
         display: inline-block;
         border: 1px solid #f0f0f0;
     }
-    
-    /* Expanded Recipe Typography */
     .recipe-section {
         margin-top: 24px;
         padding-top: 24px;
@@ -237,37 +235,34 @@ if st.session_state.current_recommendations:
             </div>
         """
         
-        # If the user has expanded the recipe, render the ingredients and instructions
+        # HTML Rendering Fix applied here (No indentation)
         if item.get("is_expanded", False):
             ing_html = "".join([f"<li>{ing.get('amount','')} {ing.get('unit','')} {ing.get('item','')}</li>" for ing in item.get('ingredients', [])])
             inst_html = "".join([f"<li>{step}</li>" for step in item.get('instructions', [])])
             
             html_card += f"""
-            <div class="recipe-section">
-                <div class="recipe-header">Ingredients</div>
-                <ul class="recipe-list">{ing_html}</ul>
-                <div class="recipe-header">Preparation ({item.get('prep_time_mins', 0)} mins)</div>
-                <ol class="recipe-list">{inst_html}</ol>
-            </div>
-            """
+<div class="recipe-section">
+    <div class="recipe-header">Ingredients</div>
+    <ul class="recipe-list">{ing_html}</ul>
+    <div class="recipe-header">Preparation ({item.get('prep_time_mins', 0)} mins)</div>
+    <ol class="recipe-list">{inst_html}</ol>
+</div>
+"""
             
-        html_card += "</div>" # Close Card
+        html_card += "</div>"
         st.markdown(html_card, unsafe_allow_html=True)
         
         # --- ACTION BUTTONS ROW ---
         st.markdown('<div class="button-row">', unsafe_allow_html=True)
         
-        # Dynamic Columns based on state
         if st.session_state.current_mode == "Full Day Itinerary":
             c1, c2, c3 = st.columns([1, 1, 2])
             
-            # SWAP BUTTON
             if len(options) > 1:
                 if c1.button(f"⟳ Swap ({curr_idx + 1}/{len(options)})", key=f"swap_{idx}", use_container_width=True):
                     st.session_state.current_recommendations["daily_plan"][idx]["selected_index"] = (curr_idx + 1) % len(options)
                     st.rerun()
             
-            # EXPAND RECIPE BUTTON
             if not item.get("is_expanded", False):
                 if c2.button("📄 View Recipe", key=f"view_{idx}", use_container_width=True):
                     with st.spinner("Drafting recipe..."):
@@ -294,7 +289,6 @@ if st.session_state.current_recommendations:
                 c2.button("✓ Recipe Loaded", key=f"loaded_{idx}", disabled=True, use_container_width=True)
 
         elif st.session_state.current_mode == "Specific Meal":
-            # Specific Meal mode: User just picks one option
             c1, c2, c3 = st.columns([1, 1, 2])
             
             if not item.get("is_expanded", False):
@@ -322,20 +316,21 @@ if st.session_state.current_recommendations:
                             
             if c2.button("💾 Save Option", type="primary", key=f"save_opt_{idx}", use_container_width=True):
                 if is_guest:
-                    st.success("Guest Mode: Option saved to session.")
+                    st.success("Guest Mode: Option saved locally. Log in to persist.")
                     st.session_state.current_recommendations = None
                     st.rerun()
                 elif supabase:
-                    res = supabase.table("recipes").insert({
-                        "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
-                        "prep_time_mins": item.get("prep_time_mins", 0), "macros": item.get("macros", {}), "ingredients": item.get("ingredients", []), "instructions": item.get("instructions", []), "is_custom": False
-                    }).execute()
-                    supabase.table("daily_plans").insert({
-                        "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": slot_data.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
-                    }).execute()
-                    st.success("Saved to Lab!")
-                    st.session_state.current_recommendations = None
-                    st.rerun()
+                    with st.spinner("Saving to Lab..."):
+                        res = supabase.table("recipes").insert({
+                            "user_id": user_id, "title": item.get("title", ""), "description": item.get("description", ""),
+                            "prep_time_mins": item.get("prep_time_mins", 0), "macros": item.get("macros", {}), "ingredients": item.get("ingredients", []), "instructions": item.get("instructions", []), "is_custom": False
+                        }).execute()
+                        supabase.table("daily_plans").insert({
+                            "user_id": user_id, "plan_date": str(st.session_state.active_date), "meal_slot": slot_data.get("slot", "Snack"), "recipe_id": res.data[0]["id"]
+                        }).execute()
+                        st.success("Saved to Lab!")
+                        st.session_state.current_recommendations = None
+                        st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -344,9 +339,9 @@ if st.session_state.current_recommendations:
         st.write("---")
         if st.button("💾 Save Entire Itinerary to Lab", type="primary", use_container_width=True):
             if is_guest:
-                st.success("Guest Mode: Itinerary saved to session. Log in to persist.")
+                st.success("Guest Mode: Itinerary saved locally. Log in to persist.")
                 st.session_state.current_recommendations = None
-                st.rerun()
+                # Removing the instant st.rerun() so you can actually read the success message!
             elif supabase:
                 with st.spinner("Locking in your schedule..."):
                     for slot_data in plan:
