@@ -183,7 +183,6 @@ if generate_btn:
     st.session_state.current_mode = planning_mode 
     slots_needed = ["Breakfast", "Mid-Morning Snack", "Lunch", "Evening Snack / Soup", "Dinner"] if planning_mode == "Full Day Itinerary" else [target_meal]
     
-    # We want 3 options per slot IF cached, but fallback will only generate 1 to prevent API timeout.
     options_per_slot = 3 if planning_mode == "Full Day Itinerary" else 5
     
     with st.spinner("Checking Recipe Vault..."):
@@ -200,7 +199,6 @@ if generate_btn:
         if cache_miss:
             st.toast("Vault expanding... Drafting live AI recipes!", icon="🧠")
             
-            # TOKEN SAFEGUARD: Fallback generates exactly ONE option per slot to prevent JSON truncation
             if planning_mode == "Full Day Itinerary":
                 task_instruction = "Generate a FULL DAY meal plan with 5 slots: Breakfast, Mid-Morning Snack, Lunch, Evening Snack, Dinner. For EACH slot, generate EXACTLY 1 distinct recipe option."
             else:
@@ -237,7 +235,6 @@ if generate_btn:
                     slot_data["selected_index"] = 0
                 st.session_state.current_recommendations = raw_data
             except Exception as e:
-                # Print the exact error so we can debug if it happens again
                 st.error(f"Live generation failed: {str(e)}")
         else:
             st.session_state.current_recommendations = {"daily_plan": daily_plan}
@@ -269,9 +266,24 @@ if st.session_state.current_recommendations:
             </div>
         """
         
+        # DEFENSIVE PROGRAMMING: Safely handle whatever string/dict the AI returns
         if item.get("is_expanded", False):
-            ing_html = "".join([f"<li>{ing.get('amount','')} {ing.get('unit','')} {ing.get('item','')}</li>" for ing in item.get('ingredients', [])])
-            inst_html = "".join([f"<li>{step}</li>" for step in item.get('instructions', [])])
+            ing_html_parts = []
+            for ing in item.get('ingredients', []):
+                if isinstance(ing, dict):
+                    ing_html_parts.append(f"<li>{ing.get('amount','')} {ing.get('unit','')} {ing.get('item','')}</li>")
+                else:
+                    ing_html_parts.append(f"<li>{ing}</li>")
+            ing_html = "".join(ing_html_parts)
+            
+            inst_html_parts = []
+            for step in item.get('instructions', []):
+                if isinstance(step, dict):
+                    inst_val = step.get("step", step.get("instruction", str(step)))
+                    inst_html_parts.append(f"<li>{inst_val}</li>")
+                else:
+                    inst_html_parts.append(f"<li>{step}</li>")
+            inst_html = "".join(inst_html_parts)
             
             html_card += f"""
 <div class="recipe-section">
